@@ -104,6 +104,8 @@ export interface Settings {
   filterMinCutoff: number;
   /** One-Euro filter: how much the cutoff rises with speed of change. */
   filterBeta: number;
+  /** Slot of the queen bee on the wall; 0 = none. */
+  queenSlot: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -118,6 +120,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zeroTau: 2.5,
   filterMinCutoff: 1.0,
   filterBeta: 0.3,
+  queenSlot: 0,
 };
 
 export const SETTINGS_LIMITS = {
@@ -128,6 +131,7 @@ export const SETTINGS_LIMITS = {
   zeroTau: { min: 0.1, max: 60 },
   filterMinCutoff: { min: 0.05, max: 30 },
   filterBeta: { min: 0, max: 5 },
+  queenSlot: { min: 0, max: 255 },
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------

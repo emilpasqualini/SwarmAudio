@@ -40,7 +40,7 @@ export class SettingsController {
   /** Validates and applies a partial update. Returns an error message, or null. */
   update(patch: Record<string, unknown>): string | null {
     const next: Settings = { ...this.store.settings };
-    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate'] as const) {
+    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenSlot'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];

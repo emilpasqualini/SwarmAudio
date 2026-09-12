@@ -20,6 +20,8 @@ export interface Frame {
   time: number;
   /** CSS colour for a slot. */
   colour: (slot: number) => string;
+  /** Slot of the queen (dashboard setting), 0 = none. */
+  queen: number;
 }
 
 export interface Visual {

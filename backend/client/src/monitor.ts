@@ -135,7 +135,7 @@ function buildProtocolCard(): void {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenSlot';
 type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
@@ -173,6 +173,7 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
       ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
       ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
+      ...numberSetting('queenSlot', 'queen', 'slot of the queen bee on the wall (♛ in the table); 0 = none'),
       ...numberSetting('filterMinCutoff', 'filter: min cutoff', 'Hz — One-Euro cutoff at rest; lower = calmer rel when still', 0.05),
       ...numberSetting('filterBeta', 'filter: beta', 'how much the cutoff rises with speed of change; higher = snappier gestures', 0.05),
       ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
@@ -335,9 +336,11 @@ function renderDevices(devices: DeviceInfo[]): void {
         el('td', {}, el('div', { class: 'mini' }, ...bars)),
         el('td', { class: 'num' }), el('td', { class: 'num' }), el('td', { class: 'num' }),
         el('td', {}, (() => {
+          const crown = el('button', { class: 'pill small quiet', text: '♛', title: 'make this the queen' });
+          crown.onclick = () => { void patchSettings({ queenSlot: state?.settings.queenSlot === d.slot ? 0 : d.slot }); };
           const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
           kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
-          return kick;
+          return el('span', { class: 'row' }, crown, kick);
         })()),
       ];
       const tr = el('tr', {}, ...cells);
@@ -351,6 +354,10 @@ function renderDevices(devices: DeviceInfo[]): void {
     c[3]!.textContent = d.platform;
     c[4]!.textContent = d.transport.toUpperCase();
     c[5]!.textContent = d.hz.toFixed(0);
+    const crown = c[10]!.querySelector('button')!;
+    const isQueen = state?.settings.queenSlot === d.slot;
+    crown.classList.toggle('on', isQueen);
+    crown.classList.toggle('quiet', !isQueen);
     if (d.last) {
       const { rel, gyro, activity } = d.last;
       [...rel, ...gyro].forEach((v, i) => setSigned(row!.bars[i]!, v, i < 3 ? 10 : 360));

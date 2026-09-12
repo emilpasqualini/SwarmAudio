@@ -16,12 +16,12 @@
 import './theme.css';
 import QRCode from 'qrcode';
 import { el, slotColour } from './dom';
-import { Dots } from './visuals/dots';
+import { Bees } from './visuals/bees';
 import type { Visual } from './visuals/visual';
 import type { FeedMessage, MonitorHello, MonitorMessage, MonitorState } from '../../shared/types';
 
 const VISUALS: { name: string; make: () => Visual }[] = [
-  { name: 'dots', make: () => new Dots() },
+  { name: 'bees', make: () => new Bees() },
 ];
 
 const root = document.getElementById('app')!;
@@ -132,7 +132,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour });
+  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenSlot ?? 0 });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
