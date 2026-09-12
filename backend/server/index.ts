@@ -57,10 +57,10 @@ const global = new Global(registry, store.settings.swarmHz);
 const vision = new VisionIn(log);
 const wall = new WallState(store.settings.queenUid, store.settings.running);
 const mix = new Mix(wall, vision, store.settings.swarmHz);
-const settings = new SettingsController(store, registry, swarm, osc, global, vision, mix);
+const feed = new Feed(registry, swarm, global, vision, mix);
+const settings = new SettingsController(store, registry, swarm, osc, global, vision, mix, feed);
 const queen = new QueenKeeper(registry, settings);
 
-const feed = new Feed(registry, swarm, global, vision, mix);
 const ingest = createIngest(registry, wall, log);
 const monitor = new Monitor(
   { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile, bootId: String(Date.now()) },

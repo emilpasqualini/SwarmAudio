@@ -19,9 +19,9 @@ both are on by default and can be switched off on the dashboard.
 
 `/hive/join`, `/hive/leave` and the once-a-second `/hive/roster` map between them.
 
-## `/hive/sample` — the wide message (18 arguments)
+## `/hive/sample` — the wide message (19 arguments)
 
-One per sensor sample per phone, ~60 Hz per phone. Type tags: `isffffffffffffffff`.
+One per sensor sample per phone, ~60 Hz per phone. Type tags: `isffffffffffffffffi`.
 
 | # | field | type | unit | meaning |
 |---|---|---|---|---|
@@ -43,11 +43,12 @@ One per sensor sample per phone, ~60 Hz per phone. Type tags: `isfffffffffffffff
 | 16 | `rel_mag` | f | m/s² | |rel|. How far from the resting position, regardless of direction. |
 | 17 | `gyro_mag` | f | °/s | |gyro|. How fast the phone turns, regardless of axis. |
 | 18 | `turn` | f | °/s | Rotation about the vertical (gravity) axis, however the phone is held: turning around yourself. Positive = counter-clockwise seen from above. |
+| 19 | `queen` | i | 0/1 | 1 if this phone is the queen right now — the same information as /hive/queen, but on every sample so a patch needs no bookkeeping. |
 
 **Compatibility rule:** fields are only ever appended. New server-side
 features (there will be more — everything is computed here, phones send raw
 sensors only) arrive as new columns at the end; `/hive/schema` carries the
-version. A patch that unpacks the first 18 keeps working.
+version. A patch that unpacks the first 19 keeps working.
 
 Axes: x = phone's right, y = phone's top, z = out of the screen. Raw
 acceleration includes gravity and is sign-normalized so a flat, screen-up
@@ -178,7 +179,7 @@ matched to a phone. At the swarm rate; each field also as `/hive/mix/<name>`.
 Every family has a switch on the dashboard (settings: *osc …*), and every
 small message has its own chip under *osc parameters* — off means not sent,
 which saves Wi-Fi traffic for whatever nobody patches. Mutable keys:
-`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
+`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `dev/queen`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
 
 **REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
 *Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that
@@ -208,6 +209,7 @@ Same data as `/hive/sample`, one small message per quantity, addressed by slot.
 | `/hive/dev/<slot>/activity` | f a | every sample | 0..1. |
 | `/hive/dev/<slot>/mag` | f |acc| · f |rel| · f |gyro| | every sample | Magnitudes. |
 | `/hive/dev/<slot>/turn` | f turn | every sample | Rotation about the vertical, °/s (v2). |
+| `/hive/dev/<slot>/queen` | i queen | every sample | 1 while this slot holds the crown, else 0 (v3). |
 | `/hive/dev/<slot>/join` | s platform · i slot | join | Slot-addressed twin of /hive/join. |
 | `/hive/dev/<slot>/leave` | i slot | leave | Slot-addressed twin of /hive/leave. |
 | `/hive/swarm/count` | i | swarm rate | Twin of the count field. |
@@ -221,7 +223,7 @@ Same data as `/hive/sample`, one small message per quantity, addressed by slot.
 
 ```
 [netreceive -u -b 9000] → [oscparse] → [list trim] → [route hive] → [route sample swarm join leave roster]
-  sample → [unpack f s f f f f f f f f f f f f f f f]   (slot uid t acc_x acc_y acc_z rel_x rel_y rel_z gyro_x gyro_y gyro_z activity idle acc_mag rel_mag gyro_mag turn)
+  sample → [unpack f s f f f f f f f f f f f f f f f]   (slot uid t acc_x acc_y acc_z rel_x rel_y rel_z gyro_x gyro_y gyro_z activity idle acc_mag rel_mag gyro_mag turn queen)
 ```
 oscparse turns `s` into symbols and `i`/`f` into floats.
 

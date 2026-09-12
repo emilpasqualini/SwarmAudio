@@ -44,6 +44,8 @@ export const SAMPLE_FIELDS: Field[] = [
   { name: 'gyro_mag', type: 'f', unit: '°/s',  description: '|gyro|. How fast the phone turns, regardless of axis.' },
   // --- v2 ---
   { name: 'turn',     type: 'f', unit: '°/s',  description: 'Rotation about the vertical (gravity) axis, however the phone is held: turning around yourself. Positive = counter-clockwise seen from above.' },
+  // --- v3 ---
+  { name: 'queen',    type: 'i', unit: '0/1',  description: '1 if this phone is the queen right now — the same information as /hive/queen, but on every sample so a patch needs no bookkeeping.' },
 ];
 
 /** `/hive/swarm` — the whole swarm, at the configured swarm rate. */
@@ -112,7 +114,7 @@ export const MIX_FIELDS: Field[] = [
  * messages are governed by their family switches instead.
  */
 export const MUTABLE: { family: string; key: string }[] = [
-  ...['acc', 'rel', 'gyro', 'activity', 'mag', 'turn'].map((k) => ({ family: 'dev', key: `dev/${k}` })),
+  ...['acc', 'rel', 'gyro', 'activity', 'mag', 'turn', 'queen'].map((k) => ({ family: 'dev', key: `dev/${k}` })),
   ...['count', 'energy', 'motion', 'sync'].map((k) => ({ family: 'swarm', key: `swarm/${k}` })),
   ...['coherence', 'phaseSync', 'tempo', 'centroid', 'entropy', 'dispersion', 'leanX', 'leanY', 'onsets', 'crest'].map((k) => ({ family: 'global', key: `global/${k}` })),
   ...['count', 'clusters', 'spread', 'energy', 'centroid', 'armsUp', 'flow', 'turbulence', 'moveSync', 'converge', 'nearest', 'stillness', 'occupancy', 'cluster', 'person', 'status'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
@@ -154,6 +156,7 @@ export const PER_FIELD_MESSAGES: MessageDoc[] = [
   { address: '/hive/dev/<slot>/activity', args: 'f a',             when: 'every sample', description: '0..1.' },
   { address: '/hive/dev/<slot>/mag',      args: 'f |acc| · f |rel| · f |gyro|', when: 'every sample', description: 'Magnitudes.' },
   { address: '/hive/dev/<slot>/turn',     args: 'f turn',          when: 'every sample', description: 'Rotation about the vertical, °/s (v2).' },
+  { address: '/hive/dev/<slot>/queen',    args: 'i queen',         when: 'every sample', description: '1 while this slot holds the crown, else 0 (v3).' },
   { address: '/hive/dev/<slot>/join',     args: 's platform · i slot', when: 'join',    description: 'Slot-addressed twin of /hive/join.' },
   { address: '/hive/dev/<slot>/leave',    args: 'i slot',          when: 'leave',        description: 'Slot-addressed twin of /hive/leave.' },
   { address: '/hive/swarm/count',         args: 'i',               when: 'swarm rate',   description: 'Twin of the count field.' },

@@ -6,8 +6,8 @@
 #X obj 20 130 list trim;
 #X obj 20 160 route hive;
 #X obj 20 190 route sample swarm join leave roster ping;
-#X obj 20 240 unpack f s f f f f f f f f f f f f f f f f;
-#X text 20 265 slot uid t acc_x acc_y acc_z rel_x rel_y rel_z gyro_x gyro_y gyro_z activity idle acc_mag rel_mag gyro_mag turn;
+#X obj 20 240 unpack f s f f f f f f f f f f f f f f f f f;
+#X text 20 265 slot uid t acc_x acc_y acc_z rel_x rel_y rel_z gyro_x gyro_y gyro_z activity idle acc_mag rel_mag gyro_mag turn queen;
 #X floatatom 20 300 5 0 0 0 slot - -;
 #X symbolatom 70 300 10 0 0 0 uid - -;
 #X floatatom 160 300 8 0 0 0 rel_x - -;

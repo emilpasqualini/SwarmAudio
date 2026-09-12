@@ -336,7 +336,7 @@ export type MonitorMessage = MonitorHello | MonitorState;
 // --- raw feed (server → teammates' code, JSON) --------------------------------
 
 export type FeedMessage =
-  | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number; turn: number }
+  | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number; turn: number; queen: boolean }
   | { type: 'join'; slot: number; uid: string; platform: Platform; name: string }
   | { type: 'leave'; slot: number; uid: string }
   | ({ type: 'swarm' } & SwarmFeatures)
