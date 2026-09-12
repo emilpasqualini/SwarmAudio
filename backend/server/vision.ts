@@ -9,8 +9,9 @@
 //  processed frame: people (anonymous tracker ids, never matched to phones),
 //  clusters, and a few room-level numbers — plus, as binary messages, a small
 //  annotated JPEG so the dashboard can show what the camera sees. This class
-//  validates, keeps the latest, and hands frames on; OSC, the feed, the wall
-//  and the dashboard subscribe here. Settings the camera side needs (cluster
+//  validates, keeps the latest, adds what only a sequence of frames can tell
+//  (flow, turbulence, converging, stillness — the crowd's motion), and hands
+//  frames on; OSC, the feed, the wall and the dashboard subscribe here. Settings the camera side needs (cluster
 //  radius, mirror, preview on/off) are pushed down the same socket.
 //
 
@@ -35,6 +36,10 @@ export class VisionIn {
   private lastAt = 0;
   private preview: Buffer | null = null;
   private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true };
+  /** Last position per tracker id, for velocities. */
+  private readonly prev = new Map<number, { x: number; y: number; t: number }>();
+  private lastSpread: { v: number; t: number } | null = null;
+  private converge = 0;
   private readonly frameListeners: ((f: VisionFrame) => void)[] = [];
   private readonly previewListeners: ((jpeg: Buffer) => void)[] = [];
 
@@ -54,6 +59,7 @@ export class VisionIn {
         }
         const frame = this.parse(String(data));
         if (!frame) return;
+        this.motion(frame);
         this.latest = frame;
         this.lastAt = Date.now();
         for (const fn of this.frameListeners) fn(frame);
@@ -79,6 +85,8 @@ export class VisionIn {
       clusters: f?.clusters.length ?? 0,
       spread: f?.spread ?? 0,
       energy: f?.energy ?? 0,
+      flowX: f?.flowX ?? 0, flowY: f?.flowY ?? 0, turbulence: f?.turbulence ?? 0, moveSync: f?.moveSync ?? 0,
+      converge: f?.converge ?? 0, nearest: f?.nearest ?? 0, stillness: f?.stillness ?? 0, occupancy: f?.occupancy ?? 0,
     };
   }
 
@@ -87,6 +95,56 @@ export class VisionIn {
     if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview) return;
     this.settings = { ...s };
     if (this.client?.readyState === this.client?.OPEN) this.client?.send(JSON.stringify({ type: 'settings', ...this.settings }));
+  }
+
+  /** The crowd's motion: needs the previous frame, so it lives here rather than in Python. */
+  private motion(f: VisionFrame): void {
+    const t = f.t / 1000;
+    const vel: { x: number; y: number }[] = [];
+    let still = 0;
+    for (const p of f.people) {
+      const q = this.prev.get(p.id);
+      if (q && t - q.t > 0 && t - q.t < 1) vel.push({ x: (p.x - q.x) / (t - q.t), y: (p.y - q.y) / (t - q.t) });
+      this.prev.set(p.id, { x: p.x, y: p.y, t });
+      if (p.energy < 0.05) still++;
+    }
+    for (const [id, q] of this.prev) if (t - q.t > 2) this.prev.delete(id);
+    const n = vel.length;
+    if (n) {
+      let fx = 0, fy = 0;
+      for (const v of vel) { fx += v.x; fy += v.y; }
+      fx /= n; fy /= n;
+      let turb = 0;
+      for (const v of vel) turb += (v.x - fx) ** 2 + (v.y - fy) ** 2;
+      f.flowX = fx; f.flowY = fy; f.turbulence = Math.sqrt(turb / n);
+      // moving people only: cosine similarity of their velocities, pairwise
+      const moving = vel.filter((v) => Math.hypot(v.x, v.y) > 0.03);
+      let sum = 0, pairs = 0;
+      for (let i = 0; i < moving.length; i++) for (let j = i + 1; j < moving.length; j++) {
+        const a = moving[i]!, b = moving[j]!;
+        sum += (a.x * b.x + a.y * b.y) / (Math.hypot(a.x, a.y) * Math.hypot(b.x, b.y)); pairs++;
+      }
+      f.moveSync = pairs ? sum / pairs : 0;
+    }
+    if (this.lastSpread && t - this.lastSpread.t > 0) {
+      const d = (f.spread - this.lastSpread.v) / (t - this.lastSpread.t);
+      this.converge += (d - this.converge) * 0.15;
+    }
+    this.lastSpread = { v: f.spread, t };
+    f.converge = f.count > 1 ? this.converge : 0;
+    if (f.count > 1) {
+      let sumNearest = 0;
+      for (const p of f.people) {
+        let best = Infinity;
+        for (const q of f.people) if (q !== p) best = Math.min(best, Math.hypot(p.x - q.x, p.y - q.y));
+        sumNearest += best;
+      }
+      f.nearest = sumNearest / f.count;
+    }
+    f.stillness = f.count ? still / f.count : 0;
+    const cells = new Set<number>();
+    for (const p of f.people) cells.add(Math.min(3, Math.floor(p.x * 4)) + 4 * Math.min(2, Math.floor(p.y * 3)));
+    f.occupancy = cells.size / 12;
   }
 
   private parse(text: string): VisionFrame | null {
@@ -116,6 +174,7 @@ export class VisionIn {
       cx: num(raw['cx'], 0, 1),
       cy: num(raw['cy'], 0, 1),
       armsUp: num(raw['armsUp'], 0, 2),
+      flowX: 0, flowY: 0, turbulence: 0, moveSync: 0, converge: 0, nearest: 0, stillness: 0, occupancy: 0,
     };
   }
 }

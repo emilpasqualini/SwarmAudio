@@ -36,15 +36,16 @@ const bad = new Uint8Array(frame); bad[0] = 9;
 assert.throws(() => decodeFrame(bad));
 
 // The wide OSC messages must match the schema they are documented by.
-import { CAM_FIELDS, GLOBAL_FIELDS, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from './osc-schema';
-import { camArgs, globalArgs, sampleArgs, swarmArgs } from '../server/osc';
+import { CAM_FIELDS, GLOBAL_FIELDS, MIX_FIELDS, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from './osc-schema';
+import { camArgs, globalArgs, mixArgs, sampleArgs, swarmArgs } from '../server/osc';
 import { decodePacket, encodeMessage } from '../server/osc-encode';
 const tagOf = (a: unknown): string => typeof a === 'string' ? 's' : typeof a === 'number' ? 'f' : 'i';
 const sample = { slot: 3, uid: 'abcd1234', t: 0, tClient: 0, acc: [0, 0, 9.81] as [number, number, number], gyro: [1, 2, 3] as [number, number, number], rel: [0, 0, 0] as [number, number, number], activity: 0.1, idle: 2, turn: 0 };
 assert.equal(sampleArgs(sample, 1.5).map(tagOf).join(''), typeTags(SAMPLE_FIELDS), '/hive/sample args must match SAMPLE_FIELDS');
 assert.equal(swarmArgs({ t: 0, count: 2, energy: 0.1, motion: 5, sync: 0.9 }, 1).map(tagOf).join(''), typeTags(SWARM_FIELDS), '/hive/swarm args must match SWARM_FIELDS');
 assert.equal(globalArgs({ t: 0, count: 2, coherence: 0, phaseSync: 0, tempo: 0, centroid: 0, entropy: 0, dispersion: 0, leanX: 0, leanY: 0, onsets: 0, crest: 0 }, 1).map(tagOf).join(''), typeTags(GLOBAL_FIELDS), '/hive/global args must match GLOBAL_FIELDS');
-assert.equal(camArgs({ t: 0, fps: 25, count: 1, clusters: [], people: [], spread: 0, energy: 0, cx: 0.5, cy: 0.5, armsUp: 0 }, 1).map(tagOf).join(''), typeTags(CAM_FIELDS), '/hive/cam args must match CAM_FIELDS');
+assert.equal(camArgs({ t: 0, fps: 25, count: 1, clusters: [], people: [], spread: 0, energy: 0, cx: 0.5, cy: 0.5, armsUp: 0, flowX: 0, flowY: 0, turbulence: 0, moveSync: 0, converge: 0, nearest: 0, stillness: 0, occupancy: 0 }, 1).map(tagOf).join(''), typeTags(CAM_FIELDS), '/hive/cam args must match CAM_FIELDS');
+assert.equal(mixArgs({ t: 0, bees: 1, people: 1, distance: 0, beesInCrowd: 0, queenInCrowd: 0, covered: 0, alignment: 0, balance: 0.5 }, 1).map(tagOf).join(''), typeTags(MIX_FIELDS), '/hive/mix args must match MIX_FIELDS');
 const [wide] = decodePacket(encodeMessage('/hive/sample', sampleArgs(sample, 1.5)));
 assert.equal(wide!.args.length, SAMPLE_FIELDS.length);
 assert.equal(wide!.args[1], 'abcd1234');

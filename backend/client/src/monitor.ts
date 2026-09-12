@@ -17,7 +17,7 @@ import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
 import { SETTINGS_LIMITS, wifiQrText } from '../../shared/types';
-import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
+import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, MIX_FIELDS, MUTABLE, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
 const log = new ActivityLog(document.getElementById('log')!);
@@ -107,6 +107,9 @@ const refs = {
   camStatus: el('div', { class: 'note', text: 'no camera process attached' }),
   camCard: el('div', { class: 'card stack' }),
   globalRow: el('div', { class: 'global-row' }),
+  mixRow: el('div', { class: 'global-row' }),
+  camRow: el('div', { class: 'global-row' }),
+  muteGrid: el('div', { class: 'mute-grid' }),
 };
 let camUrl: string | null = null;
 
@@ -147,6 +150,10 @@ function buildProtocolCard(): void {
       )),
     ),
     el('details', {},
+      el('summary', { class: 'note', text: `/hive/mix — ${MIX_FIELDS.length} arguments at the swarm rate · ${typeTags(MIX_FIELDS)}` }),
+      el('div', { class: 'table-wrap' }, fieldRows(MIX_FIELDS)),
+    ),
+    el('details', {},
       el('summary', { class: 'note', text: 'events: join · leave · roster · schema · ping · queen' }),
       el('div', { class: 'table-wrap' }, el('table', { class: 'schema' },
         el('tbody', {}, ...EVENT_MESSAGES.map((m) => el('tr', {},
@@ -171,7 +178,7 @@ function buildProtocolCard(): void {
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
 type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps';
-type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal' | 'oscMix';
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const textInputs = new Map<TextKey, HTMLInputElement>();
@@ -212,6 +219,30 @@ function boolSetting(key: BoolKey, label: string, hint: string): HTMLElement[] {
   return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, button, el('span', { class: 'hint', text: hint }))];
 }
 
+// --- osc parameters: one compact chip per small message; off = not sent, saves traffic.
+const muteChips = new Map<string, HTMLButtonElement>();
+function buildMuteGrid(): void {
+  const families = [...new Set(MUTABLE.map((m) => m.family))];
+  refs.muteGrid.replaceChildren(...families.map((fam) => el('div', { class: 'mute-family' },
+    el('span', { class: 'k', text: fam }),
+    ...MUTABLE.filter((m) => m.family === fam).map((m) => {
+      const chip = el('button', { class: 'chip on', text: m.key.slice(fam.length + 1), title: `/hive/${m.key}` });
+      chip.onclick = () => {
+        const muted = new Set(state?.settings.oscMute ?? []);
+        if (muted.has(m.key)) muted.delete(m.key); else muted.add(m.key);
+        void patchSettings({ oscMute: [...muted] });
+      };
+      muteChips.set(m.key, chip);
+      return chip;
+    }),
+  )));
+}
+
+function updateMuteGrid(s: Settings): void {
+  const muted = new Set(s.oscMute);
+  for (const [key, chip] of muteChips) chip.classList.toggle('on', !muted.has(key));
+}
+
 function buildSettingsCard(h: MonitorHello): void {
   refs.settingsCard.replaceChildren(
     el('div', { class: 'section-label', text: 'settings' }),
@@ -236,6 +267,7 @@ function buildSettingsCard(h: MonitorHello): void {
       ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
       ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm (wide) + /hive/swarm/count · energy · motion · sync'),
       ...boolSetting('oscGlobal', 'osc global', '/hive/global — coherence · phaseSync · tempo · centroid · entropy · dispersion · lean · onsets · crest, + one message each'),
+      ...boolSetting('oscMix', 'osc mix', '/hive/mix — bees ⇄ camera: distance · beesInCrowd · queenInCrowd · covered · alignment · balance'),
       el('span', { class: 'k', text: 'ports' }),
       el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
       el('span', { class: 'k', text: 'saved to' }),
@@ -259,6 +291,7 @@ function drawWifiQr(s: Settings): void {
 }
 
 function updateSettings(s: Settings): void {
+  updateMuteGrid(s);
   refs.startButton.textContent = s.running ? 'pause' : 'start';
   refs.startButton.classList.toggle('on', s.running);
   refs.roundNote.textContent = `round ${s.round} · ${s.running ? 'running' : 'paused'}`;
@@ -343,6 +376,7 @@ function buildPage(): void {
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
   buildSettingsCard(hello);
   buildProtocolCard();
+  buildMuteGrid();
 
   root.replaceChildren(el('main', { class: 'wide stack' },
     el('div', { class: 'row between wrap' },
@@ -353,21 +387,28 @@ function buildPage(): void {
       el('div', { class: 'row wrap' }, refs.startButton, refs.resetButton, refs.roundNote),
       el('span', { class: 'note', text: 'people can join while paused — bees hover, no queen race, phones say "waiting". start lets it all go; reset clears the queen and re-spawns everyone.' }),
     ),
-    el('div', { class: 'grid-2' },
+    el('div', { class: 'grid-3' },
       el('div', { class: 'stack' },
-      el('div', { class: 'card stack' },
-        el('div', { class: 'section-label', text: 'scan to join' }),
-        refs.qr,
-        refs.urls,
-        refs.wifiCard,
-        el('div', { class: 'section-label', text: 'for the projector' }),
-        el('p', { class: 'note' },
-          'Open ', el('a', { href: '/wall', target: '_blank', text: `${location.origin}/wall` }),
-          ' on the projector — big QR, join steps, live visuals. Double-click for fullscreen, h hides the panels.'),
-        el('div', { class: 'section-label', text: 'certificate warning — every phone, once' }),
-        el('p', { class: 'note', text: 'iPhone: Show Details → visit this website. Android: Advanced → Proceed. Then Join (iPhone: Allow motion).' }),
+        el('div', { class: 'card stack' },
+          el('div', { class: 'section-label', text: 'scan to join' }),
+          refs.qr,
+          refs.urls,
+          refs.wifiCard,
+          el('div', { class: 'section-label', text: 'for the projector' }),
+          el('p', { class: 'note' },
+            'Open ', el('a', { href: '/wall', target: '_blank', text: `${location.origin}/wall` }),
+            ' on the projector — big QR, join steps, live visuals. Double-click for fullscreen, h hides the panels.'),
+          el('div', { class: 'section-label', text: 'certificate warning — every phone, once' }),
+          el('p', { class: 'note', text: 'iPhone: Show Details → visit this website. Android: Advanced → Proceed. Then Join (iPhone: Allow motion).' }),
+        ),
+        el('div', { class: 'card stack' },
+          el('div', { class: 'section-label', text: 'debug sound on this mac' }),
+          el('div', { class: 'row wrap' }, refs.tonesButton, el('span', { class: 'note', text: 'volume' }), refs.volume),
+          el('p', { class: 'note', text: 'One sine per phone. Tilt bends the pitch, turning opens the volume, left/right pans. If you hear it, the whole chain works.' }),
+        ),
       ),
-      refs.camCard,
+      el('div', { class: 'stack' },
+        refs.camCard,
       ),
       el('div', { class: 'stack' },
         el('div', { class: 'card stack' },
@@ -377,16 +418,28 @@ function buildPage(): void {
           refs.feedInfo,
         ),
         refs.settingsCard,
-        el('div', { class: 'card stack' },
-          el('div', { class: 'section-label', text: 'debug sound on this mac' }),
-          el('div', { class: 'row wrap' }, refs.tonesButton, el('span', { class: 'note', text: 'volume' }), refs.volume),
-          el('p', { class: 'note', text: 'One sine per phone. Tilt bends the pitch, turning opens the volume, left/right pans. If you hear it, the whole chain works.' }),
-        ),
+      ),
+    ),
+    el('div', { class: 'grid-3' },
+      el('div', { class: 'card stack' },
+        el('div', { class: 'section-label', text: 'swarm meta-parameters — /hive/global' }),
+        refs.globalRow,
+      ),
+      el('div', { class: 'card stack' },
+        el('div', { class: 'section-label', text: 'crowd motion — /hive/cam' }),
+        refs.camRow,
+      ),
+      el('div', { class: 'card stack' },
+        el('div', { class: 'section-label', text: 'bees ⇄ camera — /hive/mix' }),
+        refs.mixRow,
       ),
     ),
     el('div', { class: 'card stack' },
-      el('div', { class: 'section-label', text: 'swarm meta-parameters — /hive/global' }),
-      refs.globalRow,
+      el('div', { class: 'row between wrap' },
+        el('div', { class: 'section-label', text: 'osc parameters — what goes out' }),
+        el('span', { class: 'note', text: 'one chip per small message; off = not sent. the wide messages follow the family switches in settings.' }),
+      ),
+      refs.muteGrid,
     ),
     refs.protocolCard,
     el('div', { class: 'card' },
@@ -428,13 +481,29 @@ function updateState(): void {
     ['centroid', `${g.centroid.toFixed(1)} Hz`], ['entropy', g.entropy.toFixed(2)], ['dispersion', g.dispersion.toFixed(2)],
     ['lean x/y', `${g.leanX.toFixed(1)} / ${g.leanY.toFixed(1)}`], ['onsets', `${g.onsets.toFixed(1)}/s`], ['crest', g.crest.toFixed(1)],
   ];
-  if (refs.globalRow.childElementCount !== cells.length) {
-    refs.globalRow.replaceChildren(...cells.map(([k]) => el('div', { class: 'big-number small' }, el('span', { text: '—' }), el('small', { text: k }))));
-  }
-  cells.forEach(([, val], i) => { refs.globalRow.children[i]!.firstChild!.textContent = val; });
+  numbers(refs.globalRow, cells);
+  const vf = state.vision;
+  numbers(refs.camRow, [
+    ['people', String(vf.count)], ['clusters', String(vf.clusters)], ['spread', vf.spread.toFixed(2)], ['energy', vf.energy.toFixed(2)],
+    ['flow', `${vf.flowX.toFixed(2)} / ${vf.flowY.toFixed(2)}`], ['turbulence', vf.turbulence.toFixed(2)], ['move sync', vf.moveSync.toFixed(2)],
+    ['converge', vf.converge.toFixed(2)], ['nearest', vf.nearest.toFixed(2)], ['stillness', vf.stillness.toFixed(2)], ['occupancy', vf.occupancy.toFixed(2)],
+  ]);
+  const m = state.mix;
+  numbers(refs.mixRow, [
+    ['bees', String(m.bees)], ['people', String(m.people)], ['distance', m.distance.toFixed(2)], ['bees in crowd', m.beesInCrowd.toFixed(2)],
+    ['queen in crowd', m.queenInCrowd ? 'yes' : 'no'], ['covered', m.covered.toFixed(2)], ['alignment', m.alignment.toFixed(2)], ['balance', m.balance.toFixed(2)],
+  ]);
   renderTargets(state.targets);
   renderDevices(state.devices);
   updateSettings(state.settings);
+}
+
+/** A row of labelled numbers, built once and then only updated. */
+function numbers(row: HTMLElement, cells: [string, string][]): void {
+  if (row.childElementCount !== cells.length) {
+    row.replaceChildren(...cells.map(([k]) => el('div', { class: 'big-number small' }, el('span', { text: '—' }), el('small', { text: k }))));
+  }
+  cells.forEach(([, val], i) => { row.children[i]!.firstChild!.textContent = val; });
 }
 
 function renderTargets(targets: OscTarget[]): void {
