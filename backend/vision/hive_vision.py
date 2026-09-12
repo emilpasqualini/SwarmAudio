@@ -552,9 +552,17 @@ async def run(args: argparse.Namespace) -> None:
         if want_preview:
             annotated = last_result.plot(img=frame.copy(), line_width=2, font_size=6) if last_result is not None else frame.copy()
             field.draw(annotated)
+            # groups: circle, threads from the centre to each member, size
             for c in out["clusters"]:
                 if c["n"] > 1:
-                    cv2.circle(annotated, (int(c["x"] * w), int(c["y"] * h)), int(max(c["r"], 0.04) * w), (180, 184, 242), 1, cv2.LINE_AA)
+                    cx, cy = int(c["x"] * w), int(c["y"] * h)
+                    rr = int(max(c["r"], 0.04) * w * 1.15)
+                    for p in out["people"]:
+                        px, py = int(p["x"] * w), int(p["y"] * h)
+                        if math.hypot(px - cx, py - cy) <= rr:
+                            cv2.line(annotated, (cx, cy), (px, py), (180, 184, 242), 1, cv2.LINE_AA)
+                    cv2.circle(annotated, (cx, cy), rr, (180, 184, 242), 2, cv2.LINE_AA)
+                    cv2.putText(annotated, str(c["n"]), (cx - 6, cy + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 184, 242), 2, cv2.LINE_AA)
             cv2.putText(annotated, f"{settings['mode']}  {out['count']} people  flow {out['flowEnergy']:.2f}  coherence {out['flowCoherence']:.2f}  {fps_ema:.0f} fps",
                         (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
             last_preview = now
