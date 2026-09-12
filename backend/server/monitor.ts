@@ -20,7 +20,7 @@ export class Monitor {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
-    private readonly hello: Omit<MonitorHello, 'type'>,
+    private hello: Omit<MonitorHello, 'type'>,
     private readonly registry: Registry,
     private readonly targets: Targets,
     private readonly swarm: Swarm,
@@ -38,6 +38,13 @@ export class Monitor {
     // Push immediately when the target list changes; the 10 Hz tick covers the rest.
     targets.onChange(() => this.push());
     settings.onChange(() => this.push());
+  }
+
+  /** New LAN addresses (the Mac changed network): tell every open dashboard. */
+  setAddresses(urls: string[], qrUrl: string): void {
+    this.hello = { ...this.hello, urls, qrUrl };
+    const text = JSON.stringify({ type: 'hello', ...this.hello } satisfies MonitorHello);
+    for (const c of this.clients) if (c.readyState === c.OPEN) c.send(text);
   }
 
   start(): void { this.timer ??= setInterval(() => this.push(), 1000 / this.hz); }

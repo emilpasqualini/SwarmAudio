@@ -36,7 +36,12 @@ function connectMonitor(): void {
   ws.onopen = () => log.step('monitor connected');
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data as string) as MonitorMessage;
-    if (msg.type === 'hello') { hello = msg; buildPage(); }
+    if (msg.type === 'hello') {
+      const rebuild = !hello;
+      hello = msg;
+      if (rebuild) buildPage();
+      else { drawAddresses(); log.step(`network changed → ${msg.qrUrl}`); }
+    }
     else { state = msg; updateState(); }
   };
   ws.onclose = () => { log.warn('monitor disconnected — retrying'); setTimeout(connectMonitor, 1500); };
@@ -142,10 +147,10 @@ function updateSettings(s: Settings): void {
   }
 }
 
-function buildPage(): void {
+// QR code for the first LAN URL, drawn locally — the venue may be offline.
+// Redrawn whenever the server reports new addresses.
+function drawAddresses(): void {
   if (!hello) return;
-
-  // QR code for the first LAN URL, drawn locally — the venue may be offline.
   const canvas = document.createElement('canvas');
   refs.qr.replaceChildren(canvas);
   QRCode.toCanvas(canvas, hello.qrUrl, { width: 320, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
@@ -154,6 +159,12 @@ function buildPage(): void {
     ...hello.urls.map((u) => el('div', { class: 'url', text: u })),
     el('p', { class: 'note', text: `Dashboard: http://localhost:${hello.httpPort}/monitor · Raw feed: ws://<this-mac>:${hello.httpPort}/feed` }),
   );
+}
+
+function buildPage(): void {
+  if (!hello) return;
+
+  drawAddresses();
 
   // Add-target form.
   const spec = el('input', { type: 'text', placeholder: 'host:port  e.g. 192.168.2.14:9001', autocomplete: 'off' });
