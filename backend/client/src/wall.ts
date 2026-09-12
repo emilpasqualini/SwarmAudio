@@ -158,6 +158,8 @@ function drawState(): void {
     stat('energy', state.swarm.energy.toFixed(1)),
     stat('motion', state.swarm.motion.toFixed(0)),
     stat('sync', state.swarm.sync.toFixed(2)),
+    stat('tempo', state.global.tempo > 0 ? `${state.global.tempo.toFixed(1)}` : '—'),
+    stat('coherence', state.global.coherence.toFixed(2)),
   );
 }
 
@@ -182,7 +184,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown, running: state?.settings.running ?? false, round: state?.settings.round ?? 0 });
+  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown, running: state?.settings.running ?? false, round: state?.settings.round ?? 0, coupling: { on: state?.settings.camCoupling ?? false, strength: state?.settings.camStrength ?? 0 } });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

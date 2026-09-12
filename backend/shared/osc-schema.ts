@@ -12,7 +12,7 @@
 //  against version 1 keeps working when version 2 adds columns at the end.
 //
 
-export const OSC_SCHEMA_VERSION = 2;
+export const OSC_SCHEMA_VERSION = 3;
 
 export type OscType = 'i' | 'f' | 's';
 
@@ -55,6 +55,35 @@ export const SWARM_FIELDS: Field[] = [
   { name: 'sync',   type: 'f', unit: '0..1', description: '1 when all phones turn equally hard, → 0 when one moves and the rest are still.' },
 ];
 
+/** `/hive/global` — swarm meta-parameters, signal-processing style, at the swarm rate (v3). */
+export const GLOBAL_FIELDS: Field[] = [
+  { name: 'id',         type: 's', unit: '',     description: 'Always "global" — so a patch can route on the first argument like it does on slot/uid.' },
+  { name: 't',          type: 'f', unit: 's',    description: 'Seconds since the server started.' },
+  { name: 'count',      type: 'i', unit: '',     description: 'Phones the features were computed over.' },
+  { name: 'coherence',  type: 'f', unit: '−1..1', description: 'Mean pairwise correlation of the phones\' rel vectors over the last second. 1 = everyone moves alike, 0 = unrelated, negative = counter-movement.' },
+  { name: 'phaseSync',  type: 'f', unit: '0..1', description: 'Kuramoto order parameter of the movement phase (from the sign changes of rel_y). 1 = in step, 0 = phases all over the place.' },
+  { name: 'tempo',      type: 'f', unit: 'Hz',   description: 'Dominant movement frequency of the whole swarm, by autocorrelation of the summed |rel| over 4 s (0.5–6 Hz; walking ≈ 2). 0 when still.' },
+  { name: 'centroid',   type: 'f', unit: 'Hz',   description: 'Spectral centroid of the swarm\'s energy (128-point FFT over ~2 s). Low = slow sways, high = jitter.' },
+  { name: 'entropy',    type: 'f', unit: '0..1', description: 'Normalised Shannon entropy of activity across phones. 1 = everyone equally active, 0 = one soloist.' },
+  { name: 'dispersion', type: 'f', unit: 'm/s²', description: 'Standard deviation of rel across phones — how different the tilts are right now.' },
+  { name: 'leanX',      type: 'f', unit: 'm/s²', description: 'Mean rel_x over phones: where the swarm leans, left/right.' },
+  { name: 'leanY',      type: 'f', unit: 'm/s²', description: 'Mean rel_y over phones: where the swarm leans, forward/back.' },
+  { name: 'onsets',     type: 'f', unit: '1/s',  description: 'Activity onsets (rest → moving) per second across the swarm, over the last 2 s. Bursts.' },
+  { name: 'crest',      type: 'f', unit: '',     description: 'Peak / RMS of the swarm energy over 2 s. ≈1 steady, high = spiky.' },
+];
+
+/** `/hive/cam` — the room as the camera sees it (backend/vision), per processed frame (v3). */
+export const CAM_FIELDS: Field[] = [
+  { name: 't',        type: 'f', unit: 's',    description: 'Seconds since the server started.' },
+  { name: 'count',    type: 'i', unit: '',     description: 'People in view.' },
+  { name: 'clusters', type: 'i', unit: '',     description: 'Groups of people closer than the cluster radius (dashboard).' },
+  { name: 'spread',   type: 'f', unit: '0..1', description: 'Mean pairwise distance between people, in frame widths. 0 when fewer than two.' },
+  { name: 'energy',   type: 'f', unit: '0..1', description: 'Mean movement speed of people in the frame, smoothed.' },
+  { name: 'cx',       type: 'f', unit: '0..1', description: 'Centroid of everyone, left→right.' },
+  { name: 'cy',       type: 'f', unit: '0..1', description: 'Centroid of everyone, top→bottom.' },
+  { name: 'armsUp',   type: 'f', unit: '0..2', description: 'Mean number of raised arms per person.' },
+];
+
 /** Events and housekeeping, with their argument lists. */
 export interface MessageDoc {
   address: string;
@@ -70,6 +99,15 @@ export const EVENT_MESSAGES: MessageDoc[] = [
   { address: '/hive/queen',  args: 's uid · i slot',                        when: 'the crown moves, and every second', description: 'Who the queen bee is (v2). uid "" and slot 0 when there is none. She is crowned by hand on the dashboard, by moving most while the throne is vacant, or by another bee flying into her on the wall.' },
   { address: '/hive/schema', args: 'i version',                             when: 'every second',       description: `Protocol version, currently ${OSC_SCHEMA_VERSION}. Wide messages only append fields between versions.` },
   { address: '/hive/ping',   args: 'i n',                                   when: 'dashboard Ping',     description: 'For checking that a target receives anything at all.' },
+];
+
+/** Camera messages besides the wide /hive/cam. */
+export const CAM_MESSAGES: MessageDoc[] = [
+  { address: '/hive/cam/count · clusters · spread · energy · armsUp', args: 'i / f',                          when: 'every camera frame',              description: 'Twins of the wide fields, one each — handy for REAPER\'s Learn.' },
+  { address: '/hive/cam/centroid', args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where everyone is on average.' },
+  { address: '/hive/cam/cluster', args: 'i index · i n · f x · f y · f r',                                     when: 'every camera frame, per cluster', description: 'x, y centre and r radius in frame widths; n people in it. Index 0..clusters−1.' },
+  { address: '/hive/cam/person',  args: 'i id · f x · f y · f depth · f armsUp · f crouch · f energy',        when: 'every camera frame, per person (switchable)', description: 'id is the tracker\'s, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1.' },
+  { address: '/hive/cam/status',  args: 'i connected · f fps',                                                   when: 'every second',                    description: 'Whether the camera process is attached and how fast it runs.' },
 ];
 
 /** Per-field addresses — the same data as /hive/sample, one small message each. */

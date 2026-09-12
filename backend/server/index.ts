@@ -24,6 +24,8 @@ import { Store } from './store';
 import { SettingsController } from './settings';
 import { QueenKeeper } from './queen';
 import { WallState } from './wall';
+import { Global } from './global';
+import { VisionIn } from './vision';
 import { Targets, parseHostPort } from './targets';
 import { OscOut } from './osc';
 import { Swarm } from './swarm';
@@ -50,21 +52,26 @@ const registry = new Registry(store.settings.deviceTimeoutMs);
 const targets = new Targets(store, config.oscTargets);
 const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
-const settings = new SettingsController(store, registry, swarm, osc);
+const global = new Global(registry, store.settings.swarmHz);
+const vision = new VisionIn(log);
+const settings = new SettingsController(store, registry, swarm, osc, global, vision);
 const queen = new QueenKeeper(registry, settings);
 const wall = new WallState(store.settings.queenUid, store.settings.running);
 
-const feed = new Feed(registry, swarm);
+const feed = new Feed(registry, swarm, global, vision);
 const ingest = createIngest(registry, wall, log);
 const monitor = new Monitor(
   { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile, bootId: String(Date.now()) },
-  registry, targets, swarm, feed, settings, config.monitorHz,
+  registry, targets, swarm, feed, settings, global, vision, config.monitorHz,
 );
 
 registry.on('sample', (s) => osc.sample(s));
 registry.on('join', (d) => { osc.join(d, registry.count); log(`#${d.slot} joined (${d.platform}, ${d.transport}${d.name ? `, "${d.name}"` : ''})`); });
 registry.on('leave', (d) => { osc.leave(d, registry.count); log(`#${d.slot} left`); });
 swarm.on((f) => osc.swarm(f));
+global.on((g) => osc.global(g));
+vision.onFrame((f) => { osc.cam(f); osc.camStatus = { connected: true, fps: f.fps }; });
+setInterval(() => { if (!vision.connected) osc.camStatus = { connected: false, fps: 0 }; }, 1000);
 
 const staticHandler = serveStatic(config.clientDir);
 
@@ -154,6 +161,7 @@ function onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, allowPhon
   const route =
     pathname === '/ws' && allowPhones ? ingest.wss
     : pathname === '/feed' ? feed.wss
+    : pathname === '/vision' ? vision.wss
     : pathname === '/monitor-ws' ? monitor.wss
     : null;
   if (!route) { socket.destroy(); return; }
@@ -213,6 +221,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
   http.listen(config.httpPort, '0.0.0.0', async () => {
     registry.start();
     swarm.start();
+    global.start();
     monitor.start();
     osc.start();
     queen.start();

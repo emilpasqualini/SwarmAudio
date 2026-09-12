@@ -2,7 +2,7 @@
 // The doc is generated so it cannot drift from what the server sends.
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { EVENT_MESSAGES, OSC_SCHEMA_VERSION, PER_FIELD_MESSAGES, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../shared/osc-schema';
+import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, OSC_SCHEMA_VERSION, PER_FIELD_MESSAGES, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../shared/osc-schema';
 import type { Field, MessageDoc } from '../shared/osc-schema';
 
 const fieldTable = (fields: Field[]): string => [
@@ -79,6 +79,37 @@ individual axes on their phone if the direction feels wrong to them.
 At the swarm rate (dashboard, default 30 Hz). Type tags: \`${typeTags(SWARM_FIELDS)}\`.
 
 ${fieldTable(SWARM_FIELDS)}
+
+## \`/hive/global\` — swarm meta-parameters (${GLOBAL_FIELDS.length} arguments, v3)
+
+The whole hive as one signal, at the swarm rate. Where \`/hive/swarm\` says *how
+much*, this says *how*: alike or not, in step or not, what rhythm, everyone or
+a soloist. Type tags: \`${typeTags(GLOBAL_FIELDS)}\`. Each field also comes as
+\`/hive/global/<name> f\`.
+
+${fieldTable(GLOBAL_FIELDS)}
+
+Windows: the correlation and phase features look at the last second per phone;
+tempo, centroid and crest at ~4 s / ~2 s of the swarm's mean |rel| sampled at
+the swarm rate. All zero with fewer than two phones (tempo/centroid need one).
+
+## \`/hive/cam\` — the room as the camera sees it (${CAM_FIELDS.length} arguments, v3)
+
+From \`backend/vision/hive_vision.py\` (YOLO pose on a webcam, see the backend
+README) at the camera's frame rate, only while it is attached. Type tags:
+\`${typeTags(CAM_FIELDS)}\`. People here are anonymous tracker ids — they are
+never matched to phones; someone can be in the picture without a phone or in
+the hive without being in the picture. Coordinates are 0..1 of the frame,
+mirrored when the dashboard says so.
+
+${fieldTable(CAM_FIELDS)}
+
+${messageTable(CAM_MESSAGES)}
+
+**REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
+*Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that
+port. On a plugin parameter *Param → Learn*, move in front of the camera, and it
+binds to e.g. \`/hive/cam/energy\` — smooth it in REAPER's parameter modulation.
 
 ## Events and housekeeping
 

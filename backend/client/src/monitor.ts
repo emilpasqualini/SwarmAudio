@@ -17,7 +17,7 @@ import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
 import { SETTINGS_LIMITS, wifiQrText } from '../../shared/types';
-import { EVENT_MESSAGES, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
+import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
 const log = new ActivityLog(document.getElementById('log')!);
@@ -34,8 +34,17 @@ let feed: WebSocket | null = null;
 
 function connectMonitor(): void {
   const ws = new WebSocket(`${wsScheme}://${location.host}/monitor-ws`);
+  ws.binaryType = 'blob';
   ws.onopen = () => log.step('monitor connected');
   ws.onmessage = (e) => {
+    if (e.data instanceof Blob) {
+      // the camera's annotated frame
+      const url = URL.createObjectURL(e.data);
+      refs.camImage.src = url;
+      if (camUrl) URL.revokeObjectURL(camUrl);
+      camUrl = url;
+      return;
+    }
     const msg = JSON.parse(e.data as string) as MonitorMessage;
     if (msg.type === 'hello') {
       // The server restarted since this page loaded: its client build may
@@ -94,7 +103,12 @@ const refs = {
   volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
   settingsCard: el('div', { class: 'card stack' }),
   protocolCard: el('div', { class: 'card stack' }),
+  camImage: el('img', { class: 'cam-preview', alt: 'camera preview' }),
+  camStatus: el('div', { class: 'note', text: 'no camera process attached' }),
+  camCard: el('div', { class: 'card stack' }),
+  globalRow: el('div', { class: 'global-row' }),
 };
+let camUrl: string | null = null;
 
 // --- protocol card: rendered from shared/osc-schema.ts, the same source docs/OSC.md is generated from.
 function buildProtocolCard(): void {
@@ -120,7 +134,20 @@ function buildProtocolCard(): void {
       el('div', { class: 'table-wrap' }, fieldRows(SWARM_FIELDS)),
     ),
     el('details', {},
-      el('summary', { class: 'note', text: 'events: join · leave · roster · schema · ping' }),
+      el('summary', { class: 'note', text: `/hive/global — ${GLOBAL_FIELDS.length} arguments at the swarm rate · ${typeTags(GLOBAL_FIELDS)}` }),
+      el('div', { class: 'table-wrap' }, fieldRows(GLOBAL_FIELDS)),
+    ),
+    el('details', {},
+      el('summary', { class: 'note', text: `/hive/cam — ${CAM_FIELDS.length} arguments per camera frame · ${typeTags(CAM_FIELDS)}` }),
+      el('div', { class: 'table-wrap' }, fieldRows(CAM_FIELDS)),
+      el('div', { class: 'table-wrap' }, el('table', { class: 'schema' },
+        el('tbody', {}, ...CAM_MESSAGES.map((m) => el('tr', {},
+          el('td', {}, el('code', { text: m.address })), el('td', { class: 'note', text: m.args }), el('td', { class: 'note', text: m.when }),
+        ))),
+      )),
+    ),
+    el('details', {},
+      el('summary', { class: 'note', text: 'events: join · leave · roster · schema · ping · queen' }),
       el('div', { class: 'table-wrap' }, el('table', { class: 'schema' },
         el('tbody', {}, ...EVENT_MESSAGES.map((m) => el('tr', {},
           el('td', {}, el('code', { text: m.address })), el('td', { class: 'note', text: m.args }), el('td', { class: 'note', text: m.when }),
@@ -143,8 +170,8 @@ function buildProtocolCard(): void {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter';
-type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal';
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const textInputs = new Map<TextKey, HTMLInputElement>();
@@ -208,6 +235,7 @@ function buildSettingsCard(h: MonitorHello): void {
       ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
       ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
       ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm (wide) + /hive/swarm/count · energy · motion · sync'),
+      ...boolSetting('oscGlobal', 'osc global', '/hive/global — coherence · phaseSync · tempo · centroid · entropy · dispersion · lean · onsets · crest, + one message each'),
       el('span', { class: 'k', text: 'ports' }),
       el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
       el('span', { class: 'k', text: 'saved to' }),
@@ -270,6 +298,24 @@ function buildPage(): void {
   if (!hello) return;
 
   drawAddresses();
+  refs.camCard.replaceChildren(
+    el('div', { class: 'row between wrap' },
+      el('div', { class: 'section-label', text: 'camera — what opencv sees' }),
+      el('span', { class: 'note', text: './start.sh --vision' }),
+    ),
+    refs.camImage,
+    refs.camStatus,
+    el('div', { class: 'settings' },
+      ...boolSetting('camPreview', 'preview', 'the annotated picture above, ~8 fps; off saves the camera process some work'),
+      ...boolSetting('oscCam', 'osc camera', '/hive/cam (wide) + count · clusters · spread · energy · centroid · armsUp + /hive/cam/cluster'),
+      ...boolSetting('oscCamPersons', 'osc per person', '/hive/cam/person per tracked person — id · x · y · depth · armsUp · crouch · energy'),
+      ...numberSetting('camEps', 'cluster radius', 'fraction of the frame width within which people count as one group', 0.01),
+      ...boolSetting('camMirror', 'mirror', 'flip left/right so the picture behaves like a mirror'),
+      ...boolSetting('camCoupling', 'wall coupling', 'bees are drawn toward the crowds the camera sees; the room\'s spread sets how far apart they keep'),
+      ...numberSetting('camStrength', 'coupling strength', '0 = none, 1 = the crowd wins over the tilt', 0.05),
+    ),
+    el('p', { class: 'note', text: 'YOLO11n-pose on this Mac: people, skeletons, clusters. Nobody in the picture is matched to a phone — the camera is a field, the phones are the agents.' }),
+  );
   refs.wifiCard.replaceChildren(
     el('details', {},
       el('summary', { class: 'section-label', text: 'wi-fi QR code (as on the wall)' }),
@@ -308,6 +354,7 @@ function buildPage(): void {
       el('span', { class: 'note', text: 'people can join while paused — bees hover, no queen race, phones say "waiting". start lets it all go; reset clears the queen and re-spawns everyone.' }),
     ),
     el('div', { class: 'grid-2' },
+      el('div', { class: 'stack' },
       el('div', { class: 'card stack' },
         el('div', { class: 'section-label', text: 'scan to join' }),
         refs.qr,
@@ -319,6 +366,8 @@ function buildPage(): void {
           ' on the projector — big QR, join steps, live visuals. Double-click for fullscreen, h hides the panels.'),
         el('div', { class: 'section-label', text: 'certificate warning — every phone, once' }),
         el('p', { class: 'note', text: 'iPhone: Show Details → visit this website. Android: Advanced → Proceed. Then Join (iPhone: Allow motion).' }),
+      ),
+      refs.camCard,
       ),
       el('div', { class: 'stack' },
         el('div', { class: 'card stack' },
@@ -334,6 +383,10 @@ function buildPage(): void {
           el('p', { class: 'note', text: 'One sine per phone. Tilt bends the pitch, turning opens the volume, left/right pans. If you hear it, the whole chain works.' }),
         ),
       ),
+    ),
+    el('div', { class: 'card stack' },
+      el('div', { class: 'section-label', text: 'swarm meta-parameters — /hive/global' }),
+      refs.globalRow,
     ),
     refs.protocolCard,
     el('div', { class: 'card' },
@@ -364,6 +417,21 @@ function updateState(): void {
   refs.motion.firstChild!.textContent = state.swarm.motion.toFixed(0);
   refs.sync.firstChild!.textContent = state.swarm.sync.toFixed(2);
   refs.feedInfo.textContent = `${state.feedSubscribers} raw feed subscriber${state.feedSubscribers === 1 ? '' : 's'}`;
+  const v = state.vision;
+  refs.camStatus.textContent = v.connected
+    ? `connected · ${v.fps.toFixed(0)} fps · ${v.count} ${v.count === 1 ? 'person' : 'people'} · ${v.clusters} cluster${v.clusters === 1 ? '' : 's'} · spread ${v.spread.toFixed(2)} · energy ${v.energy.toFixed(2)}`
+    : 'no camera process attached — run ./start.sh --vision in a second terminal';
+  refs.camImage.classList.toggle('stale', !v.connected);
+  const g = state.global;
+  const cells: [string, string][] = [
+    ['coherence', g.coherence.toFixed(2)], ['phase sync', g.phaseSync.toFixed(2)], ['tempo', `${g.tempo.toFixed(1)} Hz`],
+    ['centroid', `${g.centroid.toFixed(1)} Hz`], ['entropy', g.entropy.toFixed(2)], ['dispersion', g.dispersion.toFixed(2)],
+    ['lean x/y', `${g.leanX.toFixed(1)} / ${g.leanY.toFixed(1)}`], ['onsets', `${g.onsets.toFixed(1)}/s`], ['crest', g.crest.toFixed(1)],
+  ];
+  if (refs.globalRow.childElementCount !== cells.length) {
+    refs.globalRow.replaceChildren(...cells.map(([k]) => el('div', { class: 'big-number small' }, el('span', { text: '—' }), el('small', { text: k }))));
+  }
+  cells.forEach(([, val], i) => { refs.globalRow.children[i]!.firstChild!.textContent = val; });
   renderTargets(state.targets);
   renderDevices(state.devices);
   updateSettings(state.settings);

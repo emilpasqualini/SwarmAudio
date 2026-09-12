@@ -29,6 +29,12 @@
 //  into a bystander changes nothing — and the wall tells the server. For now
 //  the crown is all she has; her solo is still to come.
 //
+//  The camera (backend/vision) adds a second, anonymous layer: the people it
+//  sees are soft shadows on the wall, their groups faint rings. Nobody there is
+//  matched to a phone. With coupling on (dashboard), bees are drawn toward the
+//  crowds and keep their distance according to how spread out the room is —
+//  the room shapes the swarm without anyone holding a phone.
+//
 //  The tilt used here is the server's `rel`, the activity and the turn are the
 //  server's too (server/condition.ts), so the wall shows what the OSC side
 //  hears. A phone at rest has activity ≈ 0: its bee hovers and drifts home.
@@ -57,6 +63,11 @@ const FULL_SIZE_UP_TO = 6;        // bees keep their full size up to this many; 
 const TRAIL = 70;                 // frames of trail
 const QUEEN_SCALE = 1.7;
 const QUEEN_COLOUR = '#f2c14e';
+const SHADOW_TTL = 1.0;           // seconds a camera person lingers after the last frame
+const SHADOW_TAU = 0.12;          // easing of shadow positions
+
+interface Shadow { x: number; y: number; tx: number; ty: number; depth: number; armsUp: number; energy: number; seen: number }
+interface Ring { x: number; y: number; r: number; n: number }
 
 interface Bee {
   slot: number;
@@ -128,6 +139,13 @@ export class Bees implements Visual {
   /** A crowning the server has not echoed yet, so the wall never lags its own event. */
   private crowned: { uid: string; at: number } | null = null;
   private round = 0;
+  // the camera's layer
+  private readonly shadows = new Map<number, Shadow>();
+  private rings: Ring[] = [];
+  private spread = 0;
+  private camCount = 0;
+  private camSeen = -Infinity;
+  private clock = 0;
 
   resize(width: number, height: number): void { this.aspect = width / height; }
 
@@ -153,6 +171,18 @@ export class Bees implements Visual {
     } else if (msg.type === 'leave') {
       const b = this.bees.get(msg.slot);
       if (b) b.leaving = true;
+    } else if (msg.type === 'vision') {
+      const w = this.aspect;
+      for (const p of msg.people) {
+        const tx = p.x * w, ty = p.y;
+        const sh = this.shadows.get(p.id);
+        if (sh) { sh.tx = tx; sh.ty = ty; sh.depth = p.depth; sh.armsUp = p.armsUp; sh.energy = p.energy; sh.seen = this.clock; }
+        else this.shadows.set(p.id, { x: tx, y: ty, tx, ty, depth: p.depth, armsUp: p.armsUp, energy: p.energy, seen: this.clock });
+      }
+      this.rings = msg.clusters.map((c) => ({ x: c.x * w, y: c.y, r: c.r * w, n: c.n }));
+      this.spread = msg.spread;
+      this.camCount = msg.count;
+      this.camSeen = this.clock;
     } else if (msg.type === 'sample') {
       const b = this.bees.get(msg.slot);
       if (!b) return;
@@ -181,9 +211,15 @@ export class Bees implements Visual {
     return best;
   }
 
-  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round }: Frame): void {
+  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling }: Frame): void {
     this.aspect = width / height;
     const w = this.aspect;
+    this.clock = time;
+    this.drawCamera(ctx, height, dt, time);
+    // coupling: bees keep their distance according to how spread out the room is
+    const camLive = time - this.camSeen < SHADOW_TTL && this.camCount > 0;
+    const couple = coupling.on && camLive && running ? coupling.strength : 0;
+    const separation = couple > 0 ? SEPARATION * (0.5 + this.spread * 1.5) : SEPARATION;
     if (round !== this.round) {
       // Reset: everyone takes off again from a fresh spot.
       this.round = round;
@@ -226,13 +262,23 @@ export class Bees implements Visual {
         const out = Math.min(1, Math.hypot(pushX, pushY));
         dHeading += wrapAngle(inward - b.heading) * out * EDGE_STEER;
       }
+      // The crowd the camera sees pulls: toward the nearest group, the bigger
+      // the harder, never harder than the tilt itself.
+      if (couple > 0 && this.rings.length) {
+        let best: Ring | null = null, bestD = Infinity;
+        for (const r of this.rings) { const d = Math.hypot(r.x - b.x, r.y - b.y); if (d < bestD) { bestD = d; best = r; } }
+        if (best && bestD > best.r) {
+          const toward = Math.atan2(best.y - b.y, best.x - b.x);
+          dHeading += wrapAngle(toward - b.heading) * couple * STEER_TILT * Math.min(1, best.n / Math.max(1, this.camCount));
+        }
+      }
       // Neighbours: turn a little away from anyone too close, and never overlap.
       for (const o of all) {
         if (o === b || o.leaving) continue;
         const dx = b.x - o.x, dy = b.y - o.y, dist = Math.hypot(dx, dy);
-        if (dist < 1e-4 || dist > SEPARATION) continue;
+        if (dist < 1e-4 || dist > separation) continue;
         const away = Math.atan2(dy, dx);
-        const closeness = 1 - dist / SEPARATION;
+        const closeness = 1 - dist / separation;
         dHeading += wrapAngle(away - b.heading) * closeness * 0.4;
         const minDist = (rWorld + r0 * sizeOf(o) * 2 / height) * 0.6;
         const push = Math.max(0, minDist - dist) * 0.3;   // deep overlap only — touching is allowed
@@ -329,6 +375,35 @@ export class Bees implements Visual {
     }
     ctx.globalAlpha = 1;
     if (running) this.passCrown(all, queen, r0 / height, time, crown);
+  }
+
+  /** The camera's layer, underneath the bees: soft shadows for people, faint rings for groups. */
+  private drawCamera(ctx: CanvasRenderingContext2D, height: number, dt: number, time: number): void {
+    const k = lerpFactor(SHADOW_TAU, dt);
+    for (const [id, sh] of this.shadows) {
+      const age = time - sh.seen;
+      if (age > SHADOW_TTL) { this.shadows.delete(id); continue; }
+      sh.x += (sh.tx - sh.x) * k; sh.y += (sh.ty - sh.y) * k;
+      const px = sh.x * height, py = sh.y * height;
+      const r = height * (0.05 + 0.12 * sh.depth);
+      const fade = 1 - Math.max(0, age - 0.3) / (SHADOW_TTL - 0.3);
+      const bright = 0.10 + 0.08 * sh.energy + 0.12 * (sh.armsUp / 2);
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
+      grad.addColorStop(0, `rgba(242,184,180,${(bright * fade).toFixed(3)})`);
+      grad.addColorStop(1, 'rgba(242,184,180,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+    }
+    if (time - this.camSeen < SHADOW_TTL) {
+      ctx.strokeStyle = 'rgba(242,184,180,0.18)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 8]);
+      for (const ring of this.rings) {
+        if (ring.n < 2) continue;
+        ctx.beginPath(); ctx.arc(ring.x * height, ring.y * height, Math.max(ring.r, 0.04) * height, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
   }
 
   /** A bee that flies into the queen takes the crown; the queen flying into a bee changes nothing. */

@@ -19,9 +19,9 @@ import type { OscArg } from './osc-encode';
 import type { Targets } from './targets';
 import type { Registry } from './registry';
 import { OSC_SCHEMA_VERSION } from '../shared/osc-schema';
-import type { DeviceInfo, Sample, SwarmFeatures } from '../shared/types';
+import type { DeviceInfo, GlobalFeatures, Sample, SwarmFeatures, VisionFrame } from '../shared/types';
 
-export interface OscFlags { wide: boolean; perField: boolean; roster: boolean; swarm: boolean }
+export interface OscFlags { wide: boolean; perField: boolean; roster: boolean; swarm: boolean; global: boolean; cam: boolean; camPersons: boolean }
 
 /** Arguments of `/hive/sample`. Order and meaning: SAMPLE_FIELDS in shared/osc-schema.ts. Append only. */
 export function sampleArgs(s: Sample, t: number): OscArg[] {
@@ -44,11 +44,23 @@ export function swarmArgs(f: SwarmFeatures, t: number): OscArg[] {
   return [t, { i: f.count }, f.energy, f.motion, f.sync];
 }
 
+/** Arguments of `/hive/global`. Order and meaning: GLOBAL_FIELDS. Append only. */
+export function globalArgs(g: GlobalFeatures, t: number): OscArg[] {
+  return ['global', t, { i: g.count }, g.coherence, g.phaseSync, g.tempo, g.centroid, g.entropy, g.dispersion, g.leanX, g.leanY, g.onsets, g.crest];
+}
+
+/** Arguments of `/hive/cam`. Order and meaning: CAM_FIELDS. Append only. */
+export function camArgs(f: VisionFrame, t: number): OscArg[] {
+  return [t, { i: f.count }, { i: f.clusters.length }, f.spread, f.energy, f.cx, f.cy, f.armsUp];
+}
+
 export class OscOut {
   private readonly socket: Socket;
   private readonly startedAt = Date.now();
   private rosterTimer: NodeJS.Timeout | null = null;
-  flags: OscFlags = { wide: true, perField: true, roster: true, swarm: true };
+  flags: OscFlags = { wide: true, perField: true, roster: true, swarm: true, global: true, cam: true, camPersons: true };
+  /** Whether a camera process is attached, and its rate — repeated with the roster. */
+  camStatus: { connected: boolean; fps: number } = { connected: false, fps: 0 };
 
   constructor(private readonly targets: Targets, private readonly registry: Registry) {
     this.socket = createSocket('udp4');
@@ -129,7 +141,36 @@ export class OscOut {
       encodeMessage('/hive/schema', [{ i: OSC_SCHEMA_VERSION }]),
       encodeMessage('/hive/roster', args),
       this.queenMessage(),
+      encodeMessage('/hive/cam/status', [{ i: this.camStatus.connected ? 1 : 0 }, this.camStatus.fps]),
     ]));
+  }
+
+  global(g: GlobalFeatures): void {
+    if (!this.flags.global) return;
+    const parts = [encodeMessage('/hive/global', globalArgs(g, this.clock(g.t)))];
+    for (const [k, v] of Object.entries(g)) {
+      if (k === 't' || k === 'count') continue;
+      parts.push(encodeMessage(`/hive/global/${k}`, [v as number]));
+    }
+    this.send(encodeBundle(parts));
+  }
+
+  cam(f: VisionFrame): void {
+    if (!this.flags.cam) return;
+    const parts = [
+      encodeMessage('/hive/cam', camArgs(f, this.clock(f.t))),
+      encodeMessage('/hive/cam/count', [{ i: f.count }]),
+      encodeMessage('/hive/cam/clusters', [{ i: f.clusters.length }]),
+      encodeMessage('/hive/cam/spread', [f.spread]),
+      encodeMessage('/hive/cam/energy', [f.energy]),
+      encodeMessage('/hive/cam/centroid', [f.cx, f.cy]),
+      encodeMessage('/hive/cam/armsUp', [f.armsUp]),
+    ];
+    f.clusters.forEach((c, i) => parts.push(encodeMessage('/hive/cam/cluster', [{ i }, { i: c.n }, c.x, c.y, c.r])));
+    if (this.flags.camPersons) {
+      for (const p of f.people) parts.push(encodeMessage('/hive/cam/person', [{ i: p.id }, p.x, p.y, p.depth, p.armsUp, p.crouch, p.energy]));
+    }
+    this.send(encodeBundle(parts));
   }
 
   swarm(f: SwarmFeatures): void {

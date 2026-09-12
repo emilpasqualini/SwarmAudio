@@ -12,6 +12,8 @@ import type { Targets } from './targets';
 import type { Swarm } from './swarm';
 import type { Feed } from './feed';
 import type { SettingsController } from './settings';
+import type { Global } from './global';
+import type { VisionIn } from './vision';
 import type { MonitorHello, MonitorState } from '../shared/types';
 
 export class Monitor {
@@ -26,6 +28,8 @@ export class Monitor {
     private readonly swarm: Swarm,
     private readonly feed: Feed,
     private readonly settings: SettingsController,
+    private readonly global: Global,
+    private readonly vision: VisionIn,
     private readonly hz: number,
   ) {
     this.wss.on('connection', (socket) => {
@@ -38,6 +42,12 @@ export class Monitor {
     // Push immediately when the target list changes; the 10 Hz tick covers the rest.
     targets.onChange(() => this.push());
     settings.onChange(() => this.push());
+    // The camera's annotated JPEG, as a binary message — the dashboard shows
+    // it, the wall ignores binary. Only while someone is looking.
+    vision.onPreview((jpeg) => {
+      if (!settings.current.camPreview) return;
+      for (const c of this.clients) if (c.readyState === c.OPEN && c.bufferedAmount < 256 * 1024) c.send(jpeg, { binary: true });
+    });
   }
 
   /** New LAN addresses (the Mac changed network): tell every open dashboard. */
@@ -64,6 +74,8 @@ export class Monitor {
       targets: this.targets.all(),
       feedSubscribers: this.feed.subscribers,
       swarm: this.swarm.latest,
+      global: this.global.latest,
+      vision: this.vision.status(),
       settings: this.settings.current,
     };
     return JSON.stringify(state);

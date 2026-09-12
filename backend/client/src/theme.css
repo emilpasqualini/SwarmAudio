@@ -205,6 +205,13 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
 }
 .segmented button.on { background: var(--accent); color: #000; }
 
+/* --- camera + global ------------------------------------------------------ */
+
+.cam-preview { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; border-radius: 10px; background: #0a0a0a; }
+.cam-preview.stale { opacity: 0.35; }
+.global-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px; }
+.big-number.small { font-size: 1.4rem; }
+
 /* --- the swarm ------------------------------------------------------------ */
 
 .swarm-map {
