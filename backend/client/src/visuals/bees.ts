@@ -127,6 +127,7 @@ export class Bees implements Visual {
   private readonly radius = 0.016;  // of the shorter side, at full size
   /** A crowning the server has not echoed yet, so the wall never lags its own event. */
   private crowned: { uid: string; at: number } | null = null;
+  private round = 0;
 
   resize(width: number, height: number): void { this.aspect = width / height; }
 
@@ -180,9 +181,19 @@ export class Bees implements Visual {
     return best;
   }
 
-  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown }: Frame): void {
+  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round }: Frame): void {
     this.aspect = width / height;
     const w = this.aspect;
+    if (round !== this.round) {
+      // Reset: everyone takes off again from a fresh spot.
+      this.round = round;
+      this.crowned = null;
+      for (const b of this.bees.values()) {
+        const p = this.spawnPoint();
+        b.x = p.x; b.y = p.y; b.speed = 0; b.trail = [];
+        b.heading = Math.atan2(0.5 - p.y, w / 2 - p.x);
+      }
+    }
     if (this.crowned && (this.crowned.uid === serverQueen || time - this.crowned.at > 10)) this.crowned = null;
     const queen = this.crowned?.uid ?? serverQueen;
     const live = [...this.bees.values()].filter((b) => !b.leaving).length;
@@ -227,15 +238,17 @@ export class Bees implements Visual {
         const push = Math.max(0, minDist - dist) * 0.3;   // deep overlap only — touching is allowed
         b.x += (dx / dist) * push; b.y += (dy / dist) * push;
       }
-      b.heading = wrapAngle(b.heading + dHeading * dt);
+      if (running) b.heading = wrapAngle(b.heading + dHeading * dt);   // paused: hover in place, facing where you were
 
       // --- speed and wings --------------------------------------------------------
       // Activity drives both, and so does a held tilt — a slow, deliberate lean
       // moves the bee even when nothing shakes. Tilting forward hurries,
       // tilting back holds.
-      const resting = b.idle > IDLE_AFTER;
-      const drive = Math.max(Math.min(1, b.activity * 1.4), Math.min(1, Math.hypot(b.tiltX, b.tiltY)));
-      const target = resting ? 0 : SPEED * drive * clamp(1 + 0.6 * b.tiltY, 0.3, 1.6);
+      // Kept simple on purpose: tilt forward = go, tilt sideways = turn,
+      // moving about = go. Tilting back does nothing but stop.
+      const resting = b.idle > IDLE_AFTER || !running;
+      const drive = Math.min(1, Math.max(b.activity * 1.4, b.tiltY));
+      const target = resting ? 0 : SPEED * drive;
       b.speed += (target - b.speed) * lerpFactor(SPEED_TAU, dt);
       b.x += Math.cos(b.heading) * b.speed * dt;
       b.y += Math.sin(b.heading) * b.speed * dt;
@@ -244,7 +257,7 @@ export class Bees implements Visual {
       b.wingPhase = (b.wingPhase + Math.PI * 2 * beat * dt) % (Math.PI * 2);
       const wing = Math.sin(b.wingPhase) * amplitude;
 
-      if (resting) {
+      if (resting && running) {
         // Drift toward a resting spot of one's own on a ring around the middle
         // — not the middle itself, or every resting bee would pile up there and
         // the crown would change hands among people doing nothing.
@@ -315,7 +328,7 @@ export class Bees implements Visual {
       ctx.fillText((isQueen ? '♛ ' : '') + (b.name || `#${b.slot}`), px, py + r * 2.1);
     }
     ctx.globalAlpha = 1;
-    this.passCrown(all, queen, r0 / height, time, crown);
+    if (running) this.passCrown(all, queen, r0 / height, time, crown);
   }
 
   /** A bee that flies into the queen takes the crown; the queen flying into a bee changes nothing. */

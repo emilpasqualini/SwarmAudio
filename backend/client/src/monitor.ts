@@ -84,6 +84,9 @@ const refs = {
   tbody: el('tbody'),
   tonesButton: el('button', { class: 'pill quiet', text: 'Test tones: off' }),
   queenNote: el('span', { class: 'note', text: 'none' }),
+  startButton: el('button', { class: 'pill', text: 'start' }),
+  resetButton: el('button', { class: 'pill quiet', text: 'reset' }),
+  roundNote: el('span', { class: 'note' }),
   wifiCard: el('div', { class: 'stack', hidden: true }),
   wifiQr: el('div', { class: 'qr' }),
   wifiName: el('div', { class: 'url' }),
@@ -228,6 +231,9 @@ function drawWifiQr(s: Settings): void {
 }
 
 function updateSettings(s: Settings): void {
+  refs.startButton.textContent = s.running ? 'pause' : 'start';
+  refs.startButton.classList.toggle('on', s.running);
+  refs.roundNote.textContent = `round ${s.round} · ${s.running ? 'running' : 'paused'}`;
   for (const [key, input] of textInputs) {
     if (document.activeElement !== input) input.value = s[key];
   }
@@ -286,6 +292,8 @@ function buildPage(): void {
 
   refs.tonesButton.onclick = () => { void toggleTones(); };
   refs.queenClear.onclick = () => { void patchSettings({ queenUid: '' }); };
+  refs.startButton.onclick = () => { void patchSettings({ running: !state?.settings.running }); };
+  refs.resetButton.onclick = () => { if (confirm('reset the round? the queen is cleared, everyone re-spawns, and the swarm waits for start.')) void patchSettings({ reset: true } as unknown as Partial<Settings>); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
   buildSettingsCard(hello);
   buildProtocolCard();
@@ -294,6 +302,10 @@ function buildPage(): void {
     el('div', { class: 'row between wrap' },
       el('h1', { text: 'HIVE · monitor' }),
       el('div', { class: 'row wrap' }, refs.count, refs.energy, refs.motion, refs.sync),
+    ),
+    el('div', { class: 'card row wrap between' },
+      el('div', { class: 'row wrap' }, refs.startButton, refs.resetButton, refs.roundNote),
+      el('span', { class: 'note', text: 'people can join while paused — bees hover, no queen race, phones say "waiting". start lets it all go; reset clears the queen and re-spawns everyone.' }),
     ),
     el('div', { class: 'grid-2' },
       el('div', { class: 'card stack' },
