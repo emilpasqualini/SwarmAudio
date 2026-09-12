@@ -585,6 +585,19 @@ async def run(args: argparse.Namespace) -> None:
             cv2.imshow("HIVE camera", annotated)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+        if n % 250 == 0:
+            # cameras come and go (an iPhone as Continuity Camera appears only while
+            # it is nearby, unlocked and not sharing its connection): re-list and tell the dashboard
+            fresh = await loop.run_in_executor(None, list_cameras)
+            if fresh != cameras:
+                cameras[:] = fresh
+                print("[vision] cameras now: " + (" · ".join(f"{i}: {c}" for i, c in enumerate(cameras)) or "none"), flush=True)
+                if ws is not None:
+                    try:
+                        async with ws_lock:
+                            await ws.send(json.dumps({"type": "hello", "cameras": cameras, "backend": args.backend}))
+                    except Exception:  # noqa: BLE001
+                        pass
         if n % 100 == 0:
             print(f"[vision] {fps_ema:.0f} fps · {settings['mode']} · {out['count']} people · flow {out['flowEnergy']:.2f} · {'backend' if ws else 'no backend'}", flush=True)
 
