@@ -10,6 +10,8 @@
 #    ./start.sh --sim 3      start with three fake phones (also settable on the dashboard)
 #    ./start.sh --dev        rebuild the client on every save (for working on it)
 #    ./start.sh --no-open    do not open the dashboard in a browser
+#    ./start.sh --vision     the camera only: people tracking (Python) → the running server
+#                            (run it in a second terminal; any extra args go to hive_vision.py)
 #    ./start.sh --help
 #
 #  Ports: HIVE_HTTPS_PORT (8443, phones) and HIVE_HTTP_PORT (8080, dashboard),
@@ -26,6 +28,7 @@ while [ $# -gt 0 ]; do
     --sim)      export HIVE_SIMULATE="${2:-3}"; shift ;;
     --sim=*)    export HIVE_SIMULATE="${1#--sim=}" ;;
     --dev)      DEV=1 ;;
+    --vision)   shift; exec "$(dirname "$0")/vision/start.sh" "$@" ;;
     --no-open)  OPEN=0 ;;
     -h|--help)  sed -n '3,16p' "$0" | sed -e 's/^#  \{0,1\}//' -e 's/^#$//'; exit 0 ;;
     *)          echo "unknown option: $1 (try --help)"; exit 2 ;;

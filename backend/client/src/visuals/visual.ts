@@ -28,6 +28,8 @@ export interface Frame {
   running: boolean;
   /** Changes on Reset: re-spawn everyone. */
   round: number;
+  /** Camera coupling: whether bees are drawn toward the crowds the camera sees, and how hard (0..1). */
+  coupling: { on: boolean; strength: number };
 }
 
 export interface Visual {

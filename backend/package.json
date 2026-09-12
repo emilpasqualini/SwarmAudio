@@ -10,7 +10,8 @@
     "start": "tsx server/index.ts",
     "osc:listen": "tsx scripts/osc-listen.ts",
     "protocol:test": "tsx shared/protocol.test.ts",
-    "docs:osc": "tsx scripts/osc-docs.ts"
+    "docs:osc": "tsx scripts/osc-docs.ts",
+    "vision": "bash vision/start.sh"
   },
   "dependencies": {
     "qrcode": "^1.5.4",

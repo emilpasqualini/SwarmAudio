@@ -68,6 +68,79 @@ export interface SwarmFeatures {
   sync: number;
 }
 
+// --- camera (backend/vision, YOLO pose on a webcam) ------------------------------
+
+export interface VisionPerson {
+  /** Tracker id; stable while the person stays in view. Not a phone. */
+  id: number;
+  /** 0..1 across the frame (mirrored if the camera setting says so). */
+  x: number;
+  /** 0..1 down the frame. */
+  y: number;
+  /** Box height / frame height, 0..1 — bigger = closer. */
+  depth: number;
+  /** Wrists above shoulders: 0, 1 or 2. */
+  armsUp: number;
+  /** 0..1, how far the hips have dropped toward the knees. */
+  crouch: number;
+  /** 0..1, how fast the person moves in the frame, smoothed. */
+  energy: number;
+}
+
+export interface VisionCluster { n: number; x: number; y: number; r: number }
+
+export interface VisionFrame {
+  t: number;
+  fps: number;
+  count: number;
+  clusters: VisionCluster[];
+  people: VisionPerson[];
+  /** Mean pairwise distance, 0..1 of the frame width. */
+  spread: number;
+  /** Mean person energy, 0..1. */
+  energy: number;
+  /** Centroid of everyone, 0..1. */
+  cx: number;
+  cy: number;
+  /** Mean armsUp, 0..2. */
+  armsUp: number;
+}
+
+export interface VisionStatus {
+  connected: boolean;
+  fps: number;
+  count: number;
+  clusters: number;
+  spread: number;
+  energy: number;
+}
+
+// --- swarm meta-parameters (/hive/global) ---------------------------------------
+
+export interface GlobalFeatures {
+  t: number;
+  count: number;
+  /** Mean pairwise correlation of rel over the last second, −1..1. */
+  coherence: number;
+  /** Kuramoto order parameter of the movement phase, 0..1. */
+  phaseSync: number;
+  /** Dominant movement frequency of the swarm, Hz. */
+  tempo: number;
+  /** Spectral centroid of the swarm's energy, Hz. */
+  centroid: number;
+  /** How evenly activity is spread over people, 0..1. */
+  entropy: number;
+  /** Std of rel across devices, m/s². */
+  dispersion: number;
+  /** Mean rel x / y: where the swarm leans. */
+  leanX: number;
+  leanY: number;
+  /** Activity onsets per second across the swarm. */
+  onsets: number;
+  /** Peak / RMS of energy over 2 s. */
+  crest: number;
+}
+
 export interface OscTarget {
   id: string;
   label: string;
@@ -120,6 +193,20 @@ export interface Settings {
   /** Show the wi-fi / join QR codes on the wall. Switch them off once everyone is in. */
   wallWifiCode: boolean;
   wallJoinCode: boolean;
+  /** Camera: send /hive/cam (frame + clusters) and /hive/cam/person. */
+  oscCam: boolean;
+  oscCamPersons: boolean;
+  /** Camera: bees are drawn toward crowds on the wall, with this strength. */
+  camCoupling: boolean;
+  camStrength: number;
+  /** Camera: cluster radius, fraction of the frame width. */
+  camEps: number;
+  /** Camera: mirror x so the picture behaves like a mirror. */
+  camMirror: boolean;
+  /** Camera: encode the annotated preview for the dashboard. */
+  camPreview: boolean;
+  /** Send /hive/global. */
+  oscGlobal: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -143,6 +230,14 @@ export const DEFAULT_SETTINGS: Settings = {
   wifiHotspot: true,
   wallWifiCode: true,
   wallJoinCode: true,
+  oscCam: true,
+  oscCamPersons: true,
+  camCoupling: false,
+  camStrength: 0.5,
+  camEps: 0.12,
+  camMirror: true,
+  camPreview: true,
+  oscGlobal: true,
 };
 
 export const SETTINGS_LIMITS = {
@@ -154,6 +249,8 @@ export const SETTINGS_LIMITS = {
   filterMinCutoff: { min: 0.05, max: 30 },
   filterBeta: { min: 0, max: 5 },
   queenAfter: { min: 1, max: 600 },
+  camStrength: { min: 0, max: 1 },
+  camEps: { min: 0.02, max: 0.5 },
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------
@@ -177,6 +274,8 @@ export interface MonitorState {
   targets: OscTarget[];
   feedSubscribers: number;
   swarm: SwarmFeatures;
+  global: GlobalFeatures;
+  vision: VisionStatus;
   settings: Settings;
 }
 
@@ -188,7 +287,9 @@ export type FeedMessage =
   | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number; turn: number }
   | { type: 'join'; slot: number; uid: string; platform: Platform; name: string }
   | { type: 'leave'; slot: number; uid: string }
-  | ({ type: 'swarm' } & SwarmFeatures);
+  | ({ type: 'swarm' } & SwarmFeatures)
+  | ({ type: 'global' } & GlobalFeatures)
+  | ({ type: 'vision' } & VisionFrame);
 
 // --- wi-fi QR ------------------------------------------------------------------
 

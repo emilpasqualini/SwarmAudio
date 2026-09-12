@@ -16,6 +16,8 @@ import type { Registry } from './registry';
 import type { Swarm } from './swarm';
 import type { OscOut } from './osc';
 import { startSimulation } from './simulate';
+import type { Global } from './global';
+import type { VisionIn } from './vision';
 
 export class SettingsController {
   private stopSimulation: (() => void) | null = null;
@@ -26,6 +28,8 @@ export class SettingsController {
     private readonly registry: Registry,
     private readonly swarm: Swarm,
     private readonly osc: OscOut,
+    private readonly global: Global,
+    private readonly vision: VisionIn,
   ) {}
 
   get current(): Settings { return this.store.settings; }
@@ -47,14 +51,14 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n);
     }
-    for (const key of ['zeroIdleAfter', 'zeroTau', 'filterMinCutoff', 'filterBeta'] as const) {
+    for (const key of ['zeroIdleAfter', 'zeroTau', 'filterMinCutoff', 'filterBeta', 'camStrength', 'camEps'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n * 100) / 100;
     }
-    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running'] as const) {
+    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
     for (const key of ['wifiSsid', 'wifiPassword'] as const) {
@@ -82,7 +86,9 @@ export class SettingsController {
   private applyTo(s: Settings, previous: Settings): void {
     if (s.swarmHz !== previous.swarmHz) this.swarm.setHz(s.swarmHz);
     if (s.deviceTimeoutMs !== previous.deviceTimeoutMs) this.registry.setTimeout(s.deviceTimeoutMs);
-    this.osc.flags = { wide: s.oscWide, perField: s.oscPerField, roster: s.oscRoster, swarm: s.oscSwarm };
+    this.osc.flags = { wide: s.oscWide, perField: s.oscPerField, roster: s.oscRoster, swarm: s.oscSwarm, global: s.oscGlobal, cam: s.oscCam, camPersons: s.oscCamPersons };
+    this.global.setHz(s.swarmHz);
+    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview });
     this.registry.condition.idleAfter = s.zeroIdleAfter;
     this.registry.condition.baselineTau = s.zeroTau;
     this.registry.condition.minCutoff = s.filterMinCutoff;

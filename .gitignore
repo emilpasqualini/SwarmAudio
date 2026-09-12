@@ -1,2 +1,9 @@
 .DS_Store
 node_modules/
+
+# Claude Code session files
+.claude/
+
+# camera pipeline: virtualenv and downloaded model weights
+backend/vision/.venv/
+backend/vision/models/
