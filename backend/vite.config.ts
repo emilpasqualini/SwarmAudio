@@ -16,6 +16,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'client/index.html'),
         monitor: resolve(__dirname, 'client/monitor.html'),
+        wall: resolve(__dirname, 'client/wall.html'),
       },
     },
   },

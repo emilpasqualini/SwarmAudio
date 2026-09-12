@@ -153,7 +153,7 @@ function drawAddresses(): void {
   if (!hello) return;
   const canvas = document.createElement('canvas');
   refs.qr.replaceChildren(canvas);
-  QRCode.toCanvas(canvas, hello.qrUrl, { width: 320, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
+  QRCode.toCanvas(canvas, hello.qrUrl, { width: 220, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
     .catch((err: Error) => log.fail(`QR: ${err.message}`));
   refs.urls.replaceChildren(
     ...hello.urls.map((u) => el('div', { class: 'url', text: u })),
@@ -192,17 +192,12 @@ function buildPage(): void {
         el('div', { class: 'section-label', text: 'scan to join' }),
         refs.qr,
         refs.urls,
-        el('div', { class: 'section-label', text: 'certificate warning — tap through once' }),
-        el('div', { class: 'grid-2' },
-          el('div', {}, el('strong', { text: 'iPhone (Safari)' }), el('ol', { class: 'steps' },
-            el('li', { text: '“This Connection Is Not Private” → Show Details' }),
-            el('li', { text: 'tap “visit this website”, then “Visit Website”' }),
-            el('li', { text: 'tap Join → Allow motion access' }))),
-          el('div', {}, el('strong', { text: 'Android (Chrome)' }), el('ol', { class: 'steps' },
-            el('li', { text: '“Your connection is not private” → Advanced' }),
-            el('li', { text: 'tap “Proceed to … (unsafe)”' }),
-            el('li', { text: 'tap Join' }))),
-        ),
+        el('div', { class: 'section-label', text: 'for the projector' }),
+        el('p', { class: 'note' },
+          'Open ', el('a', { href: '/wall', target: '_blank', text: `${location.origin}/wall` }),
+          ' on the projector — big QR, join steps, live visuals. Double-click for fullscreen, h hides the panels.'),
+        el('div', { class: 'section-label', text: 'certificate warning — every phone, once' }),
+        el('p', { class: 'note', text: 'iPhone: Show Details → visit this website. Android: Advanced → Proceed. Then Join (iPhone: Allow motion).' }),
       ),
       el('div', { class: 'stack' },
         el('div', { class: 'card stack' },
@@ -224,7 +219,7 @@ function buildPage(): void {
       el('div', { class: 'table-wrap' }, el('table', {},
         el('thead', {}, el('tr', {},
           el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
-          el('th', { text: 'hz' }), el('th', { text: 'acc x y z · gyro x y z' }), el('th', { text: '|acc|' }), el('th', { text: '|gyro|' }), el('th'),
+          el('th', { text: 'hz' }), el('th', { text: 'tilt x y z · turn x y z' }), el('th', { text: '|tilt|' }), el('th', { text: '|turn|' }), el('th'),
         )),
         refs.tbody,
       )),

@@ -189,22 +189,23 @@ let statusLine: HTMLElement | null = null;
 let slotBadge: HTMLElement | null = null;
 
 const AXES: { key: keyof MotionSample; label: string; range: number; gyro: boolean }[] = [
-  { key: 'ax', label: 'acc x', range: 20, gyro: false },
-  { key: 'ay', label: 'acc y', range: 20, gyro: false },
-  { key: 'az', label: 'acc z', range: 20, gyro: false },
-  { key: 'gx', label: 'gyr x', range: 360, gyro: true },
-  { key: 'gy', label: 'gyr y', range: 360, gyro: true },
-  { key: 'gz', label: 'gyr z', range: 360, gyro: true },
+  { key: 'ax', label: 'x', range: 20, gyro: false },
+  { key: 'ay', label: 'y', range: 20, gyro: false },
+  { key: 'az', label: 'z', range: 20, gyro: false },
+  { key: 'gx', label: 'x', range: 360, gyro: true },
+  { key: 'gy', label: 'y', range: 360, gyro: true },
+  { key: 'gz', label: 'z', range: 360, gyro: true },
 ];
 
 function streamingView(): HTMLElement {
   bars = []; values = [];
-  const axes = el('div', { class: 'axes' });
+  const accAxes = el('div', { class: 'axes' });
+  const gyroAxes = el('div', { class: 'axes' });
   AXES.forEach((a, i) => {
     const bar = signedBar(a.gyro ? 'gyro' : '');
     const value = el('span', { class: 'value', text: '0.0' });
     bars[i] = bar; values[i] = value;
-    axes.append(el('span', { class: 'name', text: a.label }), bar, value);
+    (a.gyro ? gyroAxes : accAxes).append(el('span', { class: 'name', text: a.label }), bar, value);
   });
 
   slotBadge = el('div', { class: 'slot-badge', text: '·' }, el('small', { text: t('youAre') }));
@@ -216,8 +217,12 @@ function streamingView(): HTMLElement {
   const view = el('div', { class: 'stack' },
     el('div', { class: 'card' }, slotBadge),
     el('div', { class: 'card stack' },
-      el('div', { class: 'section-label', text: `${t('acc')} · ${t('gyro')}` }),
-      axes,
+      el('div', { class: 'section-label', text: t('acc') }),
+      accAxes,
+    ),
+    el('div', { class: 'card stack' },
+      el('div', { class: 'section-label', text: t('gyro') }),
+      gyroAxes,
     ),
     statusLine,
     el('div', { class: 'row', style: 'justify-content:center' }, leaveButton),
@@ -269,12 +274,16 @@ function updateLive(): void {
   if (statusLine) {
     const st = state.status === 'open' ? t('streaming') : state.status === 'connecting' ? t('connecting') : state.status === 'reconnecting' ? t('reconnecting') : t('disconnected');
     const cls = state.status === 'open' ? 'ok' : state.status === 'down' ? 'fail' : 'warn';
-    statusLine.replaceChildren(
+    statusLine.replaceChildren(...[
       el('span', { class: cls, text: st }),
       el('span', {}, el('span', { class: 'k', text: `${t('transport')} ` }), state.mode.toUpperCase()),
       el('span', {}, el('span', { class: 'k', text: `${t('rate')} ` }), `${state.hz} Hz`),
+      el('span', {}, el('span', { class: 'k', text: `${t('sent')} ` }), `${transport?.sent ?? 0}`),
+      transport && transport.dropped > 0
+        ? el('span', { class: 'warn' }, el('span', { class: 'k', text: `${t('dropped')} ` }), `${transport.dropped}`)
+        : null,
       el('span', {}, el('span', { class: 'k', text: 'id ' }), deviceId.slice(0, 8)),
-    );
+    ].filter((n): n is HTMLElement => n !== null));
   }
 }
 
