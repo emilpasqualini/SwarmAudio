@@ -14,6 +14,8 @@
 
 import type { DecodedFrame } from '../shared/protocol';
 import type { DeviceInfo, Platform, Sample, Transport } from '../shared/types';
+import { Conditioner } from './condition';
+import type { ConditionParams } from './condition';
 
 export interface RegistryEvents {
   join: (device: DeviceInfo) => void;
@@ -24,6 +26,7 @@ export interface RegistryEvents {
 interface Device extends DeviceInfo {
   /** Recent inter-sample interval, EWMA in ms, for the Hz readout. */
   interval: number;
+  conditioner: Conditioner;
 }
 
 export class Registry {
@@ -31,6 +34,9 @@ export class Registry {
   private readonly bySlot = new Map<number, Device>();
   private readonly listeners: { [K in keyof RegistryEvents]: RegistryEvents[K][] } = { join: [], leave: [], sample: [] };
   private sweeper: NodeJS.Timeout | null = null;
+
+  /** Shared with the settings controller, which edits it in place. */
+  readonly condition: ConditionParams = { idleAfter: 1.2, baselineTau: 2.5 };
 
   constructor(private timeoutMs: number) {}
 
@@ -73,17 +79,22 @@ export class Registry {
     const last = frame.samples[n - 1]!;
     for (let i = 0; i < n; i++) {
       const s = frame.samples[i]!;
+      let dtMs = 1000 / 60;
+      if (device.last) {
+        const dt = s.tClient - device.last.tClient;
+        if (dt > 0 && dt < 1000) { device.interval = device.interval ? device.interval * 0.9 + dt * 0.1 : dt; dtMs = dt; }
+      }
+      const c = device.conditioner.process(s.acc, s.gyro, dtMs / 1000);
       const sample: Sample = {
         slot: device.slot,
         t: now - (last.tClient - s.tClient),
         tClient: s.tClient,
         acc: s.acc,
         gyro: s.gyro,
+        rel: c.rel,
+        activity: c.activity,
+        idle: c.idle,
       };
-      if (device.last) {
-        const dt = s.tClient - device.last.tClient;
-        if (dt > 0 && dt < 1000) device.interval = device.interval ? device.interval * 0.9 + dt * 0.1 : dt;
-      }
       device.last = sample;
       for (const fn of this.listeners.sample) fn(sample, device);
     }
@@ -106,6 +117,7 @@ export class Registry {
     const device: Device = {
       id, slot, name, platform, transport,
       hz: 0, interval: 0, joinedAt: now, lastSeen: now, last: null,
+      conditioner: new Conditioner(this.condition),
     };
     this.devices.set(id, device);
     this.bySlot.set(slot, device);

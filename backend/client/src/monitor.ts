@@ -86,7 +86,7 @@ const refs = {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau';
 type BoolKey = 'oscPerSample' | 'oscMag' | 'oscSwarm';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
@@ -96,9 +96,9 @@ async function patchSettings(patch: Partial<Settings>): Promise<void> {
   if (res.ok) log.step(`settings: ${Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ')}`);
 }
 
-function numberSetting(key: NumKey, label: string, hint: string): HTMLElement[] {
+function numberSetting(key: NumKey, label: string, hint: string, step = 1): HTMLElement[] {
   const { min, max } = SETTINGS_LIMITS[key];
-  const input = el('input', { type: 'number', min, max, step: 1 });
+  const input = el('input', { type: 'number', min, max, step });
   const commit = (): void => {
     const v = Number(input.value);
     if (!Number.isFinite(v) || v === state?.settings[key]) return;
@@ -124,8 +124,10 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
       ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
       ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
-      ...boolSetting('oscPerSample', 'osc acc + gyro', '/hive/dev/<n>/acc and /gyro per sample'),
-      ...boolSetting('oscMag', 'osc magnitudes', '/hive/dev/<n>/mag per sample'),
+      ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
+      ...numberSetting('zeroTau', 'zero: slide time', 's — time constant of the zero sliding over; rel → 0 at rest', 0.1),
+      ...boolSetting('oscPerSample', 'osc per sample', '/hive/dev/<n>/acc (raw), /rel (re-zeroed), /gyro, /activity'),
+      ...boolSetting('oscMag', 'osc magnitudes', '/hive/dev/<n>/mag: |acc| |rel| |gyro|'),
       ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm/count, energy, motion, sync'),
       el('span', { class: 'k', text: 'ports' }),
       el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
@@ -219,7 +221,7 @@ function buildPage(): void {
       el('div', { class: 'table-wrap' }, el('table', {},
         el('thead', {}, el('tr', {},
           el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
-          el('th', { text: 'hz' }), el('th', { text: 'tilt x y z · turn x y z' }), el('th', { text: '|tilt|' }), el('th', { text: '|turn|' }), el('th'),
+          el('th', { text: 'hz' }), el('th', { text: 'rel x y z · turn x y z' }), el('th', { text: '|rel|' }), el('th', { text: '|turn|' }), el('th', { text: 'act' }), el('th'),
         )),
         refs.tbody,
       )),
@@ -277,7 +279,7 @@ function renderDevices(devices: DeviceInfo[]): void {
         el('td', { class: 'num' }, el('span', { class: 'row' }, el('span', { class: 'dot' }), `${d.slot}`)),
         el('td'), el('td'), el('td'), el('td', { class: 'num' }),
         el('td', {}, el('div', { class: 'mini' }, ...bars)),
-        el('td', { class: 'num' }), el('td', { class: 'num' }),
+        el('td', { class: 'num' }), el('td', { class: 'num' }), el('td', { class: 'num' }),
         el('td', {}, (() => {
           const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
           kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
@@ -295,10 +297,11 @@ function renderDevices(devices: DeviceInfo[]): void {
     c[3]!.textContent = d.transport.toUpperCase();
     c[4]!.textContent = d.hz.toFixed(0);
     if (d.last) {
-      const { acc, gyro } = d.last;
-      [...acc, ...gyro].forEach((v, i) => setSigned(row!.bars[i]!, v, i < 3 ? 20 : 360));
-      c[6]!.textContent = Math.hypot(...acc).toFixed(1);
+      const { rel, gyro, activity } = d.last;
+      [...rel, ...gyro].forEach((v, i) => setSigned(row!.bars[i]!, v, i < 3 ? 10 : 360));
+      c[6]!.textContent = Math.hypot(...rel).toFixed(1);
       c[7]!.textContent = Math.hypot(...gyro).toFixed(0);
+      c[8]!.textContent = activity.toFixed(2);
     }
   }
   for (const [slot, row] of rows) if (!seen.has(slot)) { row.tr.remove(); rows.delete(slot); }

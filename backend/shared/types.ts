@@ -28,6 +28,12 @@ export interface Sample {
   acc: [number, number, number];
   /** Rotation rate, °/s, around x (beta), y (gamma), z (alpha). */
   gyro: [number, number, number];
+  /** Smoothed acceleration relative to the device's adaptive zero (m/s²); settles to 0 at rest. */
+  rel: [number, number, number];
+  /** 0..1, how much the phone is turning or being jolted right now. */
+  activity: number;
+  /** Seconds the phone has been at rest. */
+  idle: number;
 }
 
 export type Transport = 'ws' | 'post';
@@ -82,6 +88,10 @@ export interface Settings {
   oscMag: boolean;
   /** Send /hive/swarm/* at swarmHz. */
   oscSwarm: boolean;
+  /** Seconds at rest before the zero starts to follow. */
+  zeroIdleAfter: number;
+  /** Seconds — time constant of the zero's slide. */
+  zeroTau: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -91,12 +101,16 @@ export const DEFAULT_SETTINGS: Settings = {
   oscPerSample: true,
   oscMag: true,
   oscSwarm: true,
+  zeroIdleAfter: 1.2,
+  zeroTau: 2.5,
 };
 
 export const SETTINGS_LIMITS = {
   swarmHz: { min: 1, max: 120 },
   deviceTimeoutMs: { min: 500, max: 60_000 },
   simulate: { min: 0, max: 50 },
+  zeroIdleAfter: { min: 0, max: 30 },
+  zeroTau: { min: 0.1, max: 60 },
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------
@@ -126,7 +140,7 @@ export type MonitorMessage = MonitorHello | MonitorState;
 // --- raw feed (server → teammates' code, JSON) --------------------------------
 
 export type FeedMessage =
-  | { type: 'sample'; slot: number; t: number; acc: [number, number, number]; gyro: [number, number, number] }
+  | { type: 'sample'; slot: number; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number }
   | { type: 'join'; slot: number; platform: Platform; name: string }
   | { type: 'leave'; slot: number }
   | ({ type: 'swarm' } & SwarmFeatures);

@@ -63,6 +63,15 @@ const state: State = {
   last: null,
 };
 
+// Per-axis sign flips, chosen by the person holding the phone. Applied before
+// batching, so OSC, the wall and the bars all agree with what they feel.
+type Axis = 'x' | 'y' | 'z';
+const invert: Record<Axis, boolean> = (() => {
+  try { return { x: false, y: false, z: false, ...JSON.parse(localStorage.getItem('hive.invert') ?? '{}') }; }
+  catch { return { x: false, y: false, z: false }; }
+})();
+const saveInvert = (): void => localStorage.setItem('hive.invert', JSON.stringify(invert));
+
 let transport: Transport | null = null;
 let motion: MotionStream | null = null;
 let builder: FrameBuilder | null = null;
@@ -75,6 +84,9 @@ let hzTimer = 0;
 // --------------------------------------------------------------------------- //
 
 function onSample(s: MotionSample): void {
+  if (invert.x) { s.ax = -s.ax; s.gx = -s.gx; }
+  if (invert.y) { s.ay = -s.ay; s.gy = -s.gy; }
+  if (invert.z) { s.az = -s.az; s.gz = -s.gz; }
   state.last = s;
   sampleCount++;
   builder!.push(s.t, s.ax, s.ay, s.az, s.gx, s.gy, s.gz);
@@ -214,6 +226,21 @@ function streamingView(): HTMLElement {
   const leaveButton = el('button', { class: 'pill quiet', text: t('leave') });
   leaveButton.onclick = leave;
 
+  const flips = el('div', { class: 'row wrap' },
+    ...(['x', 'y', 'z'] as Axis[]).map((axis) => {
+      const b = el('button', { class: `pill small ${invert[axis] ? 'on' : 'quiet'}`, text: `−${axis}` });
+      b.onclick = () => {
+        invert[axis] = !invert[axis];
+        saveInvert();
+        b.classList.toggle('on', invert[axis]);
+        b.classList.toggle('quiet', !invert[axis]);
+        log.log(`axis ${axis} ${invert[axis] ? 'inverted' : 'normal'}`);
+      };
+      return b;
+    }),
+    el('span', { class: 'note', text: t('invert') }),
+  );
+
   const view = el('div', { class: 'stack' },
     el('div', { class: 'card' }, slotBadge),
     el('div', { class: 'card stack' },
@@ -225,6 +252,7 @@ function streamingView(): HTMLElement {
       gyroAxes,
     ),
     statusLine,
+    el('div', { class: 'card' }, flips),
     el('div', { class: 'row', style: 'justify-content:center' }, leaveButton),
     el('p', { class: 'note center', text: t('keepOpen') }),
   );
