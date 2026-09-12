@@ -83,6 +83,8 @@ const refs = {
   feedInfo: el('p', { class: 'note' }),
   tbody: el('tbody'),
   tonesButton: el('button', { class: 'pill quiet', text: 'Test tones: off' }),
+  queenNote: el('span', { class: 'note', text: 'none' }),
+  queenClear: el('button', { class: 'pill small quiet', text: 'none', title: 'no queen; the next one is crowned after queen after seconds' }),
   volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
   settingsCard: el('div', { class: 'card stack' }),
   protocolCard: el('div', { class: 'card stack' }),
@@ -135,7 +137,7 @@ function buildProtocolCard(): void {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenSlot';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter';
 type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
@@ -173,7 +175,9 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
       ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
       ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
-      ...numberSetting('queenSlot', 'queen', 'slot of the queen bee on the wall (♛ in the table); 0 = none'),
+      el('span', { class: 'k', text: 'queen' }),
+      el('span', { class: 'row' }, refs.queenNote, refs.queenClear),
+      ...numberSetting('queenAfter', 'queen after', 's without a queen until the phone that moved most is crowned'),
       ...numberSetting('filterMinCutoff', 'filter: min cutoff', 'Hz — One-Euro cutoff at rest; lower = calmer rel when still', 0.05),
       ...numberSetting('filterBeta', 'filter: beta', 'how much the cutoff rises with speed of change; higher = snappier gestures', 0.05),
       ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
@@ -191,6 +195,9 @@ function buildSettingsCard(h: MonitorHello): void {
 }
 
 function updateSettings(s: Settings): void {
+  const queen = state?.devices.find((d) => d.uid === s.queenUid);
+  refs.queenNote.textContent = s.queenUid ? `${queen ? `#${queen.slot} ${queen.name || ''}`.trim() : 'away'} · ${s.queenUid} — ♛ in the table crowns, a bee flying into her takes over` : 'none yet — the phone that moves most is crowned';
+  refs.queenClear.hidden = !s.queenUid;
   for (const [key, input] of numInputs) {
     if (document.activeElement !== input) input.value = String(s[key]);
   }
@@ -234,6 +241,7 @@ function buildPage(): void {
   spec.onkeydown = (e) => { if (e.key === 'Enter') void submit(); };
 
   refs.tonesButton.onclick = () => { void toggleTones(); };
+  refs.queenClear.onclick = () => { void patchSettings({ queenUid: '' }); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
   buildSettingsCard(hello);
   buildProtocolCard();
@@ -337,7 +345,7 @@ function renderDevices(devices: DeviceInfo[]): void {
         el('td', { class: 'num' }), el('td', { class: 'num' }), el('td', { class: 'num' }),
         el('td', {}, (() => {
           const crown = el('button', { class: 'pill small quiet', text: '♛', title: 'make this the queen' });
-          crown.onclick = () => { void patchSettings({ queenSlot: state?.settings.queenSlot === d.slot ? 0 : d.slot }); };
+          crown.onclick = () => { void patchSettings({ queenUid: state?.settings.queenUid === d.uid ? '' : d.uid }); };
           const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
           kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
           return el('span', { class: 'row' }, crown, kick);
@@ -355,7 +363,7 @@ function renderDevices(devices: DeviceInfo[]): void {
     c[4]!.textContent = d.transport.toUpperCase();
     c[5]!.textContent = d.hz.toFixed(0);
     const crown = c[10]!.querySelector('button')!;
-    const isQueen = state?.settings.queenSlot === d.slot;
+    const isQueen = state?.settings.queenUid === d.uid;
     crown.classList.toggle('on', isQueen);
     crown.classList.toggle('quiet', !isQueen);
     if (d.last) {

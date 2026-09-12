@@ -34,6 +34,11 @@ let state: MonitorState | null = null;
 let visual: Visual = VISUALS[0]!.make();
 const colourCache = new Map<number, string>();
 
+/** The one thing the wall tells the server: who flew into the queen. */
+function crown(uid: string): void {
+  void fetch('/api/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ queenUid: uid }) });
+}
+
 // --- panels -------------------------------------------------------------------
 
 const refs = {
@@ -133,7 +138,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenSlot ?? 0 });
+  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

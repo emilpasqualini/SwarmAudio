@@ -22,6 +22,7 @@ import { serveStatic, notFound } from './static';
 import { Registry } from './registry';
 import { Store } from './store';
 import { SettingsController } from './settings';
+import { QueenKeeper } from './queen';
 import { Targets, parseHostPort } from './targets';
 import { OscOut } from './osc';
 import { Swarm } from './swarm';
@@ -49,6 +50,7 @@ const targets = new Targets(store, config.oscTargets);
 const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
+const queen = new QueenKeeper(registry, settings);
 const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, log);
 const monitor = new Monitor(
@@ -205,6 +207,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     swarm.start();
     monitor.start();
     osc.start();
+    queen.start();
     watchAddresses();
 
     console.log('');

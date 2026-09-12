@@ -22,9 +22,12 @@
 //  away from the edge and as far from everyone else as possible, and all bees
 //  shrink as the swarm grows.
 //
-//  One slot can be the queen (dashboard: queen). She is larger, golden, wears a
-//  halo and beats her wings more slowly — the one the room can pick out. For
-//  now that is all she does; her solo is still to come.
+//  One bee is the queen: larger, golden, a halo, a slower beat — the one the
+//  room can pick out. The server says who (setting `queenUid`; with no queen
+//  it crowns the phone that moved most). The crown passes on the wall: a bee
+//  that flies *into* the queen takes it — the mover wins, the queen bumping
+//  into a bystander changes nothing — and the wall tells the server. For now
+//  the crown is all she has; her solo is still to come.
 //
 //  The tilt used here is the server's `rel`, the activity and the turn are the
 //  server's too (server/condition.ts), so the wall shows what the OSC side
@@ -48,7 +51,8 @@ const COMFORT = 0.09;             // margin (in units of the shorter side) insid
 const EDGE_PUSH = 0.14;           // world units / s of push at the very edge (SPEED is 0.16)
 const EDGE_STEER = 2.5;           // rad/s of turning back toward the room at the very edge
 const EDGE = 0.03;                // hard margin — never crossed
-const SEPARATION = 0.09;          // world distance under which bees push each other apart
+const SEPARATION = 0.05;          // world distance under which bees nudge each other apart — small, collisions are the point
+const CROWN_COOLDOWN = 2.5;       // seconds after a crowning before the crown can move again
 const FULL_SIZE_UP_TO = 6;        // bees keep their full size up to this many; then they shrink
 const TRAIL = 70;                 // frames of trail
 const QUEEN_SCALE = 1.7;
@@ -56,6 +60,7 @@ const QUEEN_COLOUR = '#f2c14e';
 
 interface Bee {
   slot: number;
+  uid: string;
   name: string;
   x: number; y: number;           // world position
   heading: number;                // radians, 0 = right, clockwise on screen
@@ -120,6 +125,8 @@ export class Bees implements Visual {
   private readonly bees = new Map<number, Bee>();
   private aspect = 16 / 9;
   private readonly radius = 0.016;  // of the shorter side, at full size
+  /** A crowning the server has not echoed yet, so the wall never lags its own event. */
+  private crowned: { uid: string; at: number } | null = null;
 
   resize(width: number, height: number): void { this.aspect = width / height; }
 
@@ -129,7 +136,7 @@ export class Bees implements Visual {
       if (existing) { existing.leaving = false; existing.name = msg.name; return; }
       const { x, y } = this.spawnPoint();
       this.bees.set(msg.slot, {
-        slot: msg.slot, name: msg.name,
+        slot: msg.slot, uid: msg.uid, name: msg.name,
         x, y,
         heading: Math.atan2(0.5 - y, this.aspect / 2 - x),   // set off toward the middle
         speed: 0, wingPhase: Math.random() * Math.PI * 2,
@@ -167,20 +174,22 @@ export class Bees implements Visual {
     return best;
   }
 
-  draw({ ctx, width, height, dt, time, colour, queen }: Frame): void {
+  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown }: Frame): void {
     this.aspect = width / height;
     const w = this.aspect;
+    if (this.crowned && (this.crowned.uid === serverQueen || time - this.crowned.at > 10)) this.crowned = null;
+    const queen = this.crowned?.uid ?? serverQueen;
     const live = [...this.bees.values()].filter((b) => !b.leaving).length;
     const shrink = Math.min(1, Math.sqrt(FULL_SIZE_UP_TO / Math.max(1, live)));
     const r0 = Math.min(width, height) * this.radius * shrink;
-    const sizeOf = (b: Bee): number => b.slot === queen ? QUEEN_SCALE : 1;
+    const sizeOf = (b: Bee): number => b.uid === queen ? QUEEN_SCALE : 1;
 
     const all = [...this.bees.values()];
     for (const b of all) {
       b.alpha += (b.leaving ? -1 : 1) * dt * 2;
       if (b.alpha <= 0 && b.leaving) { this.bees.delete(b.slot); continue; }
       b.alpha = clamp(b.alpha, 0, 1);
-      const isQueen = b.slot === queen;
+      const isQueen = b.uid === queen;
       const r = r0 * sizeOf(b);
       const rWorld = r * 2 / height;         // a bee is about 2 r long
 
@@ -207,9 +216,9 @@ export class Bees implements Visual {
         if (dist < 1e-4 || dist > SEPARATION) continue;
         const away = Math.atan2(dy, dx);
         const closeness = 1 - dist / SEPARATION;
-        dHeading += wrapAngle(away - b.heading) * closeness * 0.8;
-        const minDist = rWorld + r0 * sizeOf(o) * 2 / height;
-        const push = Math.max(0, minDist - dist) * 0.5;   // overlap only
+        dHeading += wrapAngle(away - b.heading) * closeness * 0.4;
+        const minDist = (rWorld + r0 * sizeOf(o) * 2 / height) * 0.6;
+        const push = Math.max(0, minDist - dist) * 0.3;   // deep overlap only — touching is allowed
         b.x += (dx / dist) * push; b.y += (dy / dist) * push;
       }
       b.heading = wrapAngle(b.heading + dHeading * dt);
@@ -256,8 +265,9 @@ export class Bees implements Visual {
       ctx.stroke();
 
       if (isQueen) {
-        // her halo, breathing slowly
-        ctx.globalAlpha = b.alpha * (0.35 + 0.2 * Math.sin(time * 2.2));
+        // her halo, breathing slowly — and flaring for a moment when just crowned
+        const fresh = this.crowned?.uid === b.uid ? Math.max(0, 1 - (time - this.crowned.at)) : 0;
+        ctx.globalAlpha = b.alpha * (0.35 + 0.2 * Math.sin(time * 2.2) + 0.45 * fresh);
         ctx.strokeStyle = QUEEN_COLOUR;
         ctx.lineWidth = Math.max(1.5, r * 0.14);
         ctx.setLineDash([r * 0.5, r * 0.35]);
@@ -294,5 +304,27 @@ export class Bees implements Visual {
       ctx.fillText((isQueen ? '♛ ' : '') + (b.name || `#${b.slot}`), px, py + r * 2.1);
     }
     ctx.globalAlpha = 1;
+    this.passCrown(all, queen, r0 / height, time, crown);
+  }
+
+  /** A bee that flies into the queen takes the crown; the queen flying into a bee changes nothing. */
+  private passCrown(all: Bee[], queen: string, rUnit: number, time: number, crown: (uid: string) => void): void {
+    if (!queen || (this.crowned && time - this.crowned.at < CROWN_COOLDOWN)) return;
+    const q = all.find((b) => b.uid === queen && !b.leaving);
+    if (!q) return;
+    for (const b of all) {
+      if (b === q || b.leaving || b.alpha < 1) continue;
+      const dx = q.x - b.x, dy = q.y - b.y, dist = Math.hypot(dx, dy);
+      if (dist > (1 + QUEEN_SCALE) * rUnit * 1.6) continue;      // bodies touch
+      // Who ran into whom: each one's speed along the line between them.
+      const ux = dx / dist, uy = dy / dist;
+      const beeIn = (Math.cos(b.heading) * ux + Math.sin(b.heading) * uy) * b.speed;
+      const queenIn = -(Math.cos(q.heading) * ux + Math.sin(q.heading) * uy) * q.speed;
+      if (beeIn > 0.02 && beeIn > queenIn) {
+        this.crowned = { uid: b.uid, at: time };
+        crown(b.uid);
+        return;
+      }
+    }
   }
 }

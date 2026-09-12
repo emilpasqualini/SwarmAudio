@@ -40,7 +40,7 @@ export class SettingsController {
   /** Validates and applies a partial update. Returns an error message, or null. */
   update(patch: Record<string, unknown>): string | null {
     const next: Settings = { ...this.store.settings };
-    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenSlot'] as const) {
+    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenAfter'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];
@@ -56,6 +56,11 @@ export class SettingsController {
     }
     for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
+    }
+    if (patch['queenUid'] !== undefined) {
+      const uid = String(patch['queenUid']);
+      if (!/^[0-9a-z]{0,8}$/.test(uid)) return 'queenUid must be an 8-character uid or empty';
+      next.queenUid = uid;
     }
     const previous = this.store.settings;
     this.store.settings = next;

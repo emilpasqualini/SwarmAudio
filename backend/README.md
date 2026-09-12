@@ -39,7 +39,8 @@ big enough to scan from across a table.
 | filter: min cutoff / beta | One-Euro smoothing of `rel` — rest-state cutoff (Hz) and how fast it opens up on movement |
 | zero: rest before / slide time | when and how quickly the adaptive zero follows a resting phone (`rel` → 0) |
 | osc /hive/sample / per field / roster / swarm | switch each message family on or off |
-| ♛ / × in the device table | make a device the queen bee on the wall (also *queen* setting) / drop it now |
+| queen / queen after | who the queen bee is (♛ in the table crowns one by hand; a bee that flies into her takes the crown; with no queen, the phone that moved most is crowned after *queen after* seconds) |
+| ♛ / × in the device table | crown a device / drop it now |
 | test tones | sonify the swarm on this Mac |
 
 Only the ports come from the environment and need a restart:
