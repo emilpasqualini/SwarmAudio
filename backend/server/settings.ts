@@ -63,7 +63,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n * 100) / 100;
     }
-    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal', 'oscMix', 'queenHidden', 'camPush'] as const) {
+    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal', 'oscMix', 'queenHidden', 'camPush', 'camEnabled'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
     for (const key of ['wifiSsid', 'wifiPassword'] as const) {
@@ -113,7 +113,7 @@ export class SettingsController {
     this.mix.queenUid = s.queenUid;
     this.feed.queenUid = s.queenUid;
     this.global.setHz(s.swarmHz);
-    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview, camera: s.camIndex, mode: s.camMode, detectFps: s.camDetectFps });
+    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview, camera: s.camIndex, mode: s.camMode, detectFps: s.camDetectFps, enabled: s.camEnabled });
     this.registry.condition.idleAfter = s.zeroIdleAfter;
     this.registry.condition.baselineTau = s.zeroTau;
     this.registry.condition.minCutoff = s.filterMinCutoff;
