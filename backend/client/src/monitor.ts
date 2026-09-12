@@ -521,6 +521,7 @@ function updateState(): void {
   numbers(refs.fieldRow, [
     ['flow energy', v.flowEnergy.toFixed(2)], ['coherence', v.flowCoherence.toFixed(2)], ['centre x', v.flowCx.toFixed(2)], ['centre y', v.flowCy.toFixed(2)],
     ['beat', v.beat > 0 ? `${v.beat.toFixed(1)} Hz` : '—'], ['beat strength', v.beatStrength.toFixed(2)], ['density', v.densityMean.toFixed(2)],
+    ['largest group', `${Math.round(v.largestShare * 100)} %`],
   ]);
   const g = state.global;
   const cells: [string, string][] = [

@@ -87,7 +87,8 @@ export interface VisionPerson {
   energy: number;
 }
 
-export interface VisionCluster { n: number; x: number; y: number; r: number }
+/** A group of people; `share` = n / people in view, 0..1. */
+export interface VisionCluster { n: number; x: number; y: number; r: number; share: number }
 
 export interface VisionFrame {
   t: number;
@@ -127,6 +128,8 @@ export interface VisionFrame {
   beat: number;
   beatStrength: number;
   densityMean: number;
+  /** Fraction of the people in view who stand in the largest group, 0..1. */
+  largestShare: number;
   /** field or people — what the camera process is doing. */
   mode: CamMode;
 }
@@ -174,6 +177,7 @@ export interface VisionStatus {
   beat: number;
   beatStrength: number;
   densityMean: number;
+  largestShare: number;
   mode: CamMode;
 }
 
