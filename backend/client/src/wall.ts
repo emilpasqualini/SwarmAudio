@@ -18,6 +18,7 @@ import QRCode from 'qrcode';
 import { el, slotColour } from './dom';
 import { Bees } from './visuals/bees';
 import type { Visual } from './visuals/visual';
+import { wifiQrText } from '../../shared/types';
 import type { FeedMessage, MonitorHello, MonitorMessage, MonitorState } from '../../shared/types';
 
 const VISUALS: { name: string; make: () => Visual }[] = [
@@ -51,6 +52,10 @@ function crown(uid: string): void {
 // --- panels -------------------------------------------------------------------
 
 const refs = {
+  wifi: el('div', { class: 'wall-corner bottom-left card wall-join wall-wifi', hidden: true }),
+  wifiQr: el('div', { class: 'qr' }),
+  wifiName: el('div', { class: 'url' }),
+  joinLabel: el('div', { class: 'section-label', text: 'join · mitmachen · 参加' }),
   qr: el('div', { class: 'qr' }),
   url: el('div', { class: 'url' }),
   count: el('div', { class: 'wall-count', text: '0' }),
@@ -63,8 +68,9 @@ root.append(
     el('div', { class: 'note', text: 'swarm audio' }),
   ),
   el('div', { class: 'wall-corner top-right' }, refs.count, el('div', { class: 'note', text: 'in the swarm · im schwarm · 参加中' })),
+  refs.wifi,
   el('div', { class: 'wall-corner bottom-left card wall-join' },
-    el('div', { class: 'section-label', text: 'join · mitmachen · 参加' }),
+    refs.joinLabel,
     refs.qr,
     refs.url,
     el('div', { class: 'note wall-steps', text: 'scan · accept the certificate warning · tap join.' }),
@@ -116,8 +122,34 @@ function drawQr(): void {
   refs.url.textContent = hello.qrUrl;
 }
 
+let wifiDrawn = '';
+function drawWifi(): void {
+  if (!state) return;
+  const { wifiSsid, wifiPassword, wifiHotspot } = state.settings;
+  const text = wifiSsid ? wifiQrText(wifiSsid, wifiPassword) : '';
+  if (text + wifiHotspot === wifiDrawn) return;
+  wifiDrawn = text + wifiHotspot;
+  refs.wifi.hidden = !text;
+  document.body.classList.toggle('has-wifi', !!text);
+  refs.joinLabel.textContent = text ? '2 · join · mitmachen · 参加' : 'join · mitmachen · 参加';
+  if (!text) return;
+  refs.wifi.replaceChildren(
+    el('div', { class: 'section-label', text: wifiHotspot ? '1 · hotspot first · zuerst hotspot · まずホットスポット' : '1 · wi-fi first · zuerst wlan · まずWi-Fi' }),
+    refs.wifiQr,
+    refs.wifiName,
+    el('div', { class: 'note wall-steps', text: 'scan with the camera · join · then the code on the right' }),
+    el('div', { class: 'note wall-steps', text: 'mit der kamera scannen · verbinden · dann den code rechts' }),
+    el('div', { class: 'note wall-steps', lang: 'ja', text: 'カメラで読み取る · 接続 · 次に右のコード' }),
+  );
+  const c = document.createElement('canvas');
+  refs.wifiQr.replaceChildren(c);
+  void QRCode.toCanvas(c, text, { width: 260, margin: 0, color: { dark: '#000000', light: '#ffffff' } });
+  refs.wifiName.textContent = wifiSsid;
+}
+
 function drawState(): void {
   if (!state) return;
+  drawWifi();
   refs.count.textContent = String(state.swarm.count);
   refs.swarm.replaceChildren(
     stat('energy', state.swarm.energy.toFixed(1)),

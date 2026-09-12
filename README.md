@@ -10,7 +10,7 @@ through the same pipeline to hear how they differ.
 ```
 phones ──sensors, 60 Hz──▶ backend on the Mac ──OSC/UDP──▶ Pd / Max / SC / Python  (any laptop on the Wi-Fi)
                                    │
-                                   ├──▶ /wall      projector: QR code + live visuals
+                                   ├──▶ /wall      projector: wi-fi + join QR codes, the swarm as bees, the queen
                                    └──▶ /monitor   laptop: config, devices, test tones
 ```
 
@@ -28,8 +28,10 @@ cd backend && ./start.sh
 ```
 
 Prints a QR code, opens the dashboard. Phones scan, tap through the
-certificate warning once, tap **Join**. Full instructions, network advice and
-the venue setup: [`backend/README.md`](backend/README.md).
+certificate warning once, tap **join**. Put `http://localhost:8080/wall` on the
+projector: Wi-Fi and join QR codes, the swarm as bees, and the queen — the bee
+that moved most, until someone flies into her. Full instructions, network
+advice and the venue setup: [`backend/README.md`](backend/README.md).
 
 ## Receiving the swarm in your tool
 
@@ -42,9 +44,11 @@ every field, with Pd / Max / SC / Python snippets. Ready-made:
 
 The short version: `/hive/sample` carries, per phone and sample, a stable
 `uid`, a session `slot`, raw acceleration, re-zeroed acceleration (`rel`, 0 at
-rest at any angle), gyroscope, an `activity` level and magnitudes. Fields are
-only ever appended, so patches keep working as the server learns new tricks.
-All computation happens on the server; phones send raw sensors only.
+rest at any angle, One-Euro smoothed), gyroscope, an `activity` level,
+magnitudes and `turn` (rotation about the vertical, however the phone is held).
+`/hive/queen` says who the queen bee is. Fields are only ever appended, so
+patches keep working as the server learns new tricks. All computation happens
+on the server; phones send raw sensors only.
 
 ## Working in this repo
 

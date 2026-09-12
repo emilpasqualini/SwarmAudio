@@ -11,12 +11,18 @@
 //  binary frame as the body; both paths end in `registry.push`. Nothing
 //  downstream can tell the difference.
 //
+//  The one thing that flows back: the wall's snapshot of where the bees are,
+//  for the phones' little map — a text message down the socket whenever the
+//  wall posts a new one, or as the body of the reply to a POSTed frame when
+//  the phone has not seen the current version yet (a 204 otherwise).
+//
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 import { decodeFrame, HEADER_BYTES, MAX_SAMPLES, SAMPLE_BYTES } from '../shared/protocol';
 import type { Registry } from './registry';
+import type { WallState } from './wall';
 
 const MAX_FRAME = HEADER_BYTES + MAX_SAMPLES * SAMPLE_BYTES;
 const ID_RE = /^[a-zA-Z0-9-]{8,64}$/;
@@ -28,7 +34,13 @@ export interface Ingest {
   handlePost: (req: IncomingMessage, res: ServerResponse, pathname: string, query: URLSearchParams) => boolean;
 }
 
-export function createIngest(registry: Registry, log: (line: string) => void): Ingest {
+export function createIngest(registry: Registry, wall: WallState, log: (line: string) => void): Ingest {
+  const sockets = new Set<WebSocket>();
+  wall.onChange((text) => { for (const s of sockets) if (s.readyState === s.OPEN && s.bufferedAmount < 8192) s.send(text); });
+  /** POST phones: which wall version each has been handed. */
+  const handed = new Map<string, number>();
+  registry.on('leave', (d) => handed.delete(d.id));
+
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME, perMessageDeflate: false });
 
   wss.on('connection', (socket: WebSocket, req: IncomingMessage) => {
@@ -37,6 +49,8 @@ export function createIngest(registry: Registry, log: (line: string) => void): I
     const name = (url.searchParams.get('name') ?? '').slice(0, 24);
     if (!ID_RE.test(id)) { socket.close(1008, 'bad id'); return; }
 
+    sockets.add(socket);
+    if (wall.text) socket.send(wall.text);
     let alive = true;
     socket.on('pong', () => { alive = true; });
     const heartbeat = setInterval(() => {
@@ -58,6 +72,7 @@ export function createIngest(registry: Registry, log: (line: string) => void): I
 
     socket.on('close', () => {
       clearInterval(heartbeat);
+      sockets.delete(socket);
       registry.remove(id);
     });
     socket.on('error', (err) => log(`ws ${id.slice(0, 8)}: ${err.message}`));
@@ -89,7 +104,12 @@ export function createIngest(registry: Registry, log: (line: string) => void): I
       if (res.writableEnded) return;
       try {
         registry.push(id, name, 'post', decodeFrame(Buffer.concat(chunks)));
-        res.writeHead(204, { 'Cache-Control': 'no-store' }).end();
+        if (wall.text && handed.get(id) !== wall.version) {
+          handed.set(id, wall.version);
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(wall.text);
+        } else {
+          res.writeHead(204, { 'Cache-Control': 'no-store' }).end();
+        }
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'text/plain' }).end((err as Error).message);
       }

@@ -32,8 +32,9 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
   (already gitignored).
 - Python helpers for consumers live in `backend/examples/` and must run with
   the standard library where possible.
-- Language of code and comments: English. Phone UI has EN/DE strings in
-  `backend/client/src/i18n.ts` — add both when you add a string.
+- Language of code and comments: English. Phone UI has EN/DE/JA strings in
+  `backend/client/src/i18n.ts` — add all three when you add a string; EN and DE
+  are lower case by design.
 
 ## Quick start
 
@@ -52,5 +53,13 @@ python3 examples/osc_listen.py 9000                # see what the installation r
 - Both platforms cap sensors at ~60 Hz. iOS's gravity sign is flipped on the
   client so a flat phone reads `(0, 0, +9.81)` everywhere.
 - Slots (1..N) identify devices on the OSC side; UUIDs never leave the server.
-- Everything downstream of `Registry.push` only sees `Sample { slot, t, acc, gyro }`
-  — that is the seam for replaying recorded or external (bee) swarm data later.
+- Everything downstream of `Registry.push` only sees `Sample { slot, uid, t, acc,
+  gyro, rel, activity, idle, turn }` — that is the seam for replaying recorded
+  or external (bee) swarm data later.
+- The queen is a server setting (`queenUid`, `/hive/queen` on OSC). The wall's
+  flight model (`client/src/visuals/bees.ts`) runs in the projector's browser;
+  it reports positions to `/api/wall` (relayed to the phones' maps on the ingest
+  link) and crown changes to `/api/settings`. Do not move the flight model to
+  the server unless you also move those.
+- Phone UI strings: EN (default, all lower case) · DE (all lower case) · JA
+  (polite です/ます, 女王蜂 for the queen) in `client/src/i18n.ts` — add all three.

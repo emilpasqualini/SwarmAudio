@@ -108,6 +108,11 @@ export interface Settings {
   queenUid: string;
   /** Seconds without a queen after which the device that moved most becomes one. */
   queenAfter: number;
+  /** Wi-Fi the phones must be on; the wall and the dashboard show it as a QR code. '' = none. */
+  wifiSsid: string;
+  wifiPassword: string;
+  /** true: the network is an iPhone personal hotspot (hints and wording follow); false: any other Wi-Fi. */
+  wifiHotspot: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -124,6 +129,9 @@ export const DEFAULT_SETTINGS: Settings = {
   filterBeta: 0.3,
   queenUid: '',
   queenAfter: 20,
+  wifiSsid: '',
+  wifiPassword: '',
+  wifiHotspot: true,
 };
 
 export const SETTINGS_LIMITS = {
@@ -170,3 +178,16 @@ export type FeedMessage =
   | { type: 'join'; slot: number; uid: string; platform: Platform; name: string }
   | { type: 'leave'; slot: number; uid: string }
   | ({ type: 'swarm' } & SwarmFeatures);
+
+// --- wi-fi QR ------------------------------------------------------------------
+
+/**
+ * The string a phone camera understands as "join this network"
+ * (the de-facto WIFI: scheme used by Android and iOS). Backslash-escapes the
+ * characters the scheme reserves; an empty password means an open network.
+ */
+export function wifiQrText(ssid: string, password: string, hidden = false): string {
+  const esc = (v: string): string => v.replace(/([\;,":])/g, '\\$1');
+  const auth = password ? `T:WPA;S:${esc(ssid)};P:${esc(password)};` : `T:nopass;S:${esc(ssid)};`;
+  return `WIFI:${auth}${hidden ? 'H:true;' : ''};`;
+}

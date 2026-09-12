@@ -53,8 +53,10 @@ const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
 const queen = new QueenKeeper(registry, settings);
 const wall = new WallState();
+wall.setQueen(store.settings.queenUid);
+
 const feed = new Feed(registry, swarm);
-const ingest = createIngest(registry, log);
+const ingest = createIngest(registry, wall, log);
 const monitor = new Monitor(
   { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile, bootId: String(Date.now()) },
   registry, targets, swarm, feed, settings, config.monitorHz,
@@ -95,7 +97,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       const error = settings.update((await readJson(req)) as Record<string, unknown>);
       json(res, error ? 400 : 200, error ? { error } : settings.current); return true;
     }
-    if (pathname === '/api/wall' && req.method === 'GET') { json(res, 200, wall.snapshot(settings.current.queenUid)); return true; }
+    if (pathname === '/api/wall' && req.method === 'GET') { json(res, 200, wall.snapshot()); return true; }
     if (pathname === '/api/wall' && req.method === 'POST') {
       wall.set(((await readJson(req)) as { bees?: unknown }).bees);
       res.writeHead(204).end(); return true;
@@ -222,6 +224,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
       if (uid === lastQueen) return;
       lastQueen = uid;
       osc.queen(uid);
+      wall.setQueen(uid);
       const d = registry.list().find((x) => x.uid === uid);
       log(uid ? `queen: #${d?.slot ?? '?'} ${d?.name ? `"${d.name}" ` : ''}(${uid})` : 'queen: none');
     });
