@@ -130,6 +130,11 @@ small message has its own chip under *osc parameters* — off means not sent,
 which saves Wi-Fi traffic for whatever nobody patches. Mutable keys:
 ${MUTABLE.map((m) => `\`${m.key}\``).join(', ')}.
 
+**Groups by index.** \`clusters\` (in \`/hive/cam\`) says how many; then
+\`/hive/cam/cluster/0/share\`, \`/hive/cam/cluster/1/share\`, … are each group's
+share of everyone in view, largest first, adding up to 1 — route on the index
+as you would on a slot. When a group disappears its index sends a final 0.
+
 **REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
 *Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that
 port. On a plugin parameter *Param → Learn*, move in front of the camera, and it

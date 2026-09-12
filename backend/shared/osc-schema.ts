@@ -127,7 +127,7 @@ export const MUTABLE: { family: string; key: string }[] = [
   ...['count', 'energy', 'motion', 'sync'].map((k) => ({ family: 'swarm', key: `swarm/${k}` })),
   ...['coherence', 'phaseSync', 'tempo', 'centroid', 'entropy', 'dispersion', 'leanX', 'leanY', 'onsets', 'crest'].map((k) => ({ family: 'global', key: `global/${k}` })),
   ...['count', 'clusters', 'spread', 'energy', 'centroid', 'armsUp', 'flow', 'turbulence', 'moveSync', 'converge', 'nearest', 'stillness', 'occupancy', 'cluster', 'person', 'status',
-    'flowEnergy', 'flowCoherence', 'flowCentroid', 'beat', 'densityMean', 'largestShare', 'shares', 'grid', 'gridflow', 'density'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
+    'flowEnergy', 'flowCoherence', 'flowCentroid', 'beat', 'densityMean', 'largestShare', 'shares', 'clusterIndexed', 'grid', 'gridflow', 'density'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
   ...['distance', 'beesInCrowd', 'queenInCrowd', 'covered', 'alignment', 'balance'].map((k) => ({ family: 'mix', key: `mix/${k}` })),
 ];
 
@@ -154,6 +154,9 @@ export const CAM_MESSAGES: MessageDoc[] = [
   { address: '/hive/cam/centroid', args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where everyone is on average.' },
   { address: '/hive/cam/flow',     args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where the crowd drifts, frame widths per second.' },
   { address: '/hive/cam/cluster', args: 'i index · i n · f x · f y · f r · f share',                           when: 'every camera frame, per cluster', description: 'x, y centre and r radius in frame widths; n people in it; share = n / people in view. Largest group first, index 0..clusters−1.' },
+  { address: '/hive/cam/cluster/<i>/share', args: 'f share',                                                  when: 'every camera frame, per cluster', description: 'By index, like /hive/dev/<slot>: the group\'s share of everyone in view. i = 0 is the largest group; `clusters` in the wide message is the bound; a vanished index gets one last 0. All shares add up to 1.' },
+  { address: '/hive/cam/cluster/<i>/n',     args: 'i n',                                                      when: 'every camera frame, per cluster', description: 'People in group i (0 once when it vanishes).' },
+  { address: '/hive/cam/cluster/<i>/pos',   args: 'f x · f y · f r',                                          when: 'every camera frame, per cluster', description: 'Where group i is and how big, in frame widths.' },
   { address: '/hive/cam/shares',  args: 'f × clusters',                                                        when: 'every camera frame',              description: 'The groups\' shares of everyone in view, largest first, as one list — its length is the number of groups; the values add up to 1.' },
   { address: '/hive/cam/person',  args: 'i id · f x · f y · f depth · f armsUp · f crouch · f energy',        when: 'every camera frame, per person (switchable)', description: 'id is the tracker\'s, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1.' },
   { address: '/hive/cam/status',  args: 'i connected · f fps',                                                   when: 'every second',                    description: 'Whether the camera process is attached and how fast it runs.' },
