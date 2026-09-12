@@ -130,6 +130,8 @@ export interface MonitorHello {
   httpsPort: number;
   /** Where hive.config.json lives, for the dashboard to say so. */
   configFile: string;
+  /** Changes on every server start; a page that sees a new one reloads itself. */
+  bootId: string;
 }
 
 export interface MonitorState {

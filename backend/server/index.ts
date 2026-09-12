@@ -52,7 +52,7 @@ const settings = new SettingsController(store, registry, swarm, osc);
 const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, log);
 const monitor = new Monitor(
-  { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile },
+  { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile, bootId: String(Date.now()) },
   registry, targets, swarm, feed, settings, config.monitorHz,
 );
 
