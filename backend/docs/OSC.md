@@ -93,6 +93,7 @@ At the swarm rate (dashboard, default 30 Hz). Type tags: `fifff`.
 | `/hive/join` | i slot · s uid · s name · s platform | a phone joins | platform is ios, android, other (fake phones) or unknown. name may be empty. |
 | `/hive/leave` | i slot · s uid | a phone leaves | Sent on an explicit leave or after the device timeout. |
 | `/hive/roster` | i count · (i slot · s uid · s name)… | every second | Everyone currently in the swarm, so a receiver started late still learns the names. |
+| `/hive/queen` | s uid · i slot | the crown moves, and every second | Who the queen bee is (v2). uid "" and slot 0 when there is none. She is crowned by hand on the dashboard, by moving most while the throne is vacant, or by another bee flying into her on the wall. |
 | `/hive/schema` | i version | every second | Protocol version, currently 2. Wide messages only append fields between versions. |
 | `/hive/ping` | i n | dashboard Ping | For checking that a target receives anything at all. |
 

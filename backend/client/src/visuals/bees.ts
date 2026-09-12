@@ -130,6 +130,12 @@ export class Bees implements Visual {
 
   resize(width: number, height: number): void { this.aspect = width / height; }
 
+  snapshot(): { uid: string; slot: number; x: number; y: number; h: number }[] {
+    return [...this.bees.values()]
+      .filter((b) => !b.leaving)
+      .map((b) => ({ uid: b.uid, slot: b.slot, x: +(b.x / this.aspect).toFixed(4), y: +b.y.toFixed(4), h: +b.heading.toFixed(3) }));
+  }
+
   feed(msg: FeedMessage): void {
     if (msg.type === 'join') {
       const existing = this.bees.get(msg.slot);
@@ -239,9 +245,14 @@ export class Bees implements Visual {
       const wing = Math.sin(b.wingPhase) * amplitude;
 
       if (resting) {
+        // Drift toward a resting spot of one's own on a ring around the middle
+        // — not the middle itself, or every resting bee would pile up there and
+        // the crown would change hands among people doing nothing.
+        const ang = b.slot * 2.399963;             // golden angle: slots spread evenly
+        const hx = w / 2 + Math.cos(ang) * 0.22, hy = 0.5 + Math.sin(ang) * 0.22;
         const aH = lerpFactor(HOME_TAU, dt);
-        b.x += (w / 2 - b.x) * aH;
-        b.y += (0.5 - b.y) * aH;
+        b.x += (hx - b.x) * aH;
+        b.y += (hy - b.y) * aH;
       }
 
       // safety net — the edge push should have kept the bee off it long before
@@ -313,14 +324,16 @@ export class Bees implements Visual {
     const q = all.find((b) => b.uid === queen && !b.leaving);
     if (!q) return;
     for (const b of all) {
-      if (b === q || b.leaving || b.alpha < 1) continue;
+      // Only a bee that is actually flying can take the crown: a phone lying
+      // still never does, however close its bee drifts.
+      if (b === q || b.leaving || b.alpha < 1 || b.idle > IDLE_AFTER || b.speed < 0.04) continue;
       const dx = q.x - b.x, dy = q.y - b.y, dist = Math.hypot(dx, dy);
       if (dist > (1 + QUEEN_SCALE) * rUnit * 1.6) continue;      // bodies touch
       // Who ran into whom: each one's speed along the line between them.
       const ux = dx / dist, uy = dy / dist;
       const beeIn = (Math.cos(b.heading) * ux + Math.sin(b.heading) * uy) * b.speed;
       const queenIn = -(Math.cos(q.heading) * ux + Math.sin(q.heading) * uy) * q.speed;
-      if (beeIn > 0.02 && beeIn > queenIn) {
+      if (beeIn > 0.03 && beeIn > queenIn) {
         this.crowned = { uid: b.uid, at: time };
         crown(b.uid);
         return;

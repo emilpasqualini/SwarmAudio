@@ -67,6 +67,7 @@ export const EVENT_MESSAGES: MessageDoc[] = [
   { address: '/hive/join',   args: 'i slot · s uid · s name · s platform', when: 'a phone joins',      description: 'platform is ios, android, other (fake phones) or unknown. name may be empty.' },
   { address: '/hive/leave',  args: 'i slot · s uid',                        when: 'a phone leaves',     description: 'Sent on an explicit leave or after the device timeout.' },
   { address: '/hive/roster', args: 'i count · (i slot · s uid · s name)…',  when: 'every second',       description: 'Everyone currently in the swarm, so a receiver started late still learns the names.' },
+  { address: '/hive/queen',  args: 's uid · i slot',                        when: 'the crown moves, and every second', description: 'Who the queen bee is (v2). uid "" and slot 0 when there is none. She is crowned by hand on the dashboard, by moving most while the throne is vacant, or by another bee flying into her on the wall.' },
   { address: '/hive/schema', args: 'i version',                             when: 'every second',       description: `Protocol version, currently ${OSC_SCHEMA_VERSION}. Wide messages only append fields between versions.` },
   { address: '/hive/ping',   args: 'i n',                                   when: 'dashboard Ping',     description: 'For checking that a target receives anything at all.' },
 ];
