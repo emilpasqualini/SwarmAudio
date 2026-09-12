@@ -107,8 +107,16 @@ carries it. This is Web Audio in the browser — a check, not the installation.
 ## Known limits, and what to do at the venue
 
 - **Guest Wi-Fi often isolates clients** — phones cannot reach the Mac at all.
-  Bring your own network: an iPhone hotspot (Mac shows up as `172.20.10.x`) or
-  the Mac's *Internet Sharing*. The server prints every address it has.
+- **The phone that provides a hotspot cannot reach its own clients.** If the
+  Mac is tethered to your iPhone (`172.20.10.x`), that iPhone will never find
+  the server; every *other* phone on the hotspot will.
+- **Recommended at the venue — the Mac hosts the Wi-Fi, no internet needed:**
+  System Settings → General → Sharing → *Internet Sharing*: share from
+  *Ethernet* (works without a cable), to computers using *Wi-Fi*, name it
+  `HIVE`, set a password, switch it on. Everyone joins `HIVE`; the Mac is
+  always `192.168.2.1`, there is no client isolation and no hotspot-host problem.
+  The server prints every address it has and re-issues the certificate when
+  the address changes.
 - 60 Hz is the browser's cap on both platforms.
 - The screen must stay on. The app holds a wake lock (iOS ≥ 16.4, Chrome), but
   a locked phone stops sending within a second and is dropped after 3 s; it
