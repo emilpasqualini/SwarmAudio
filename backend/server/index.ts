@@ -1,0 +1,195 @@
+//
+//  index.ts
+//  HIVE (server)
+//
+//  Boot, wiring, and the two listening sockets.
+//
+//  HTTPS on 8443 is what phones use: the app, the WebSocket, the POST
+//  fallback. HTTP on 8080 exists for laptops — it serves the raw `/feed`
+//  without a certificate warning and redirects browsers to HTTPS.
+//
+
+import { createServer as createHttpServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import type { Duplex } from 'node:stream';
+import { existsSync } from 'node:fs';
+import QRCode from 'qrcode';
+import { config } from './config';
+import { lanAddresses } from './lan';
+import { loadOrCreateCertificate } from './cert';
+import { serveStatic, notFound } from './static';
+import { Registry } from './registry';
+import { Targets, parseHostPort } from './targets';
+import { OscOut } from './osc';
+import { Swarm } from './swarm';
+import { Feed } from './feed';
+import { Monitor } from './monitor';
+import { createIngest } from './ingest';
+import { startSimulation } from './simulate';
+
+const log = (line: string): void => console.log(`[hive] ${line}`);
+
+// --- pieces -------------------------------------------------------------------
+
+const addresses = lanAddresses();
+const ips = addresses.map((a) => a.address);
+const urls = ips.map((ip) => `https://${ip}:${config.httpsPort}`);
+const qrUrl = urls[0] ?? `https://localhost:${config.httpsPort}`;
+
+const credentials = loadOrCreateCertificate(config.certDir, ips);
+if (credentials.regenerated) log(`new self-signed certificate for ${ips.join(', ') || 'localhost'}`);
+
+const registry = new Registry(config.deviceTimeoutMs);
+const targets = new Targets(config.configFile, config.oscTargets);
+const osc = new OscOut(targets);
+const swarm = new Swarm(registry, config.swarmHz);
+const feed = new Feed(registry, swarm);
+const ingest = createIngest(registry, log);
+const monitor = new Monitor(
+  { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort },
+  registry, targets, swarm, feed, config.monitorHz,
+);
+
+registry.on('sample', (s) => osc.sample(s));
+registry.on('join', (d) => { osc.join(d, registry.count); log(`#${d.slot} joined (${d.platform}, ${d.transport}${d.name ? `, "${d.name}"` : ''})`); });
+registry.on('leave', (d) => { osc.leave(d, registry.count); log(`#${d.slot} left`); });
+swarm.on((f) => osc.swarm(f));
+
+const staticHandler = serveStatic(config.clientDir);
+
+// --- HTTP routing -------------------------------------------------------------
+
+function readJson(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => { size += c.length; if (size > 4096) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch (e) { reject(e); } });
+    req.on('error', reject);
+  });
+}
+
+function json(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+let pingCounter = 0;
+
+async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
+  if (!pathname.startsWith('/api/')) return false;
+  try {
+    if (pathname === '/api/health') { json(res, 200, { ok: true, devices: registry.count }); return true; }
+    if (pathname === '/api/targets' && req.method === 'GET') { json(res, 200, targets.all()); return true; }
+    if (pathname === '/api/targets' && req.method === 'POST') {
+      const body = (await readJson(req)) as { host?: string; port?: number | string; spec?: string; label?: string };
+      const hp = body.spec ? parseHostPort(body.spec) : (body.host && body.port ? { host: body.host, port: Number(body.port) } : null);
+      const t = hp ? targets.add(hp.host, hp.port, body.label ?? '') : null;
+      if (!t) { json(res, 400, { error: 'expected host:port' }); return true; }
+      json(res, 201, t); return true;
+    }
+    const m = /^\/api\/targets\/([a-f0-9-]+)(\/ping)?$/.exec(pathname);
+    if (m) {
+      const id = m[1]!;
+      if (m[2] && req.method === 'POST') {
+        const ok = osc.ping(id, ++pingCounter);
+        json(res, ok ? 200 : 404, ok ? { sent: pingCounter } : { error: 'no such target' }); return true;
+      }
+      if (req.method === 'PATCH') {
+        const t = targets.update(id, (await readJson(req)) as Record<string, unknown>);
+        json(res, t ? 200 : 404, t ?? { error: 'no such target or invalid patch' }); return true;
+      }
+      if (req.method === 'DELETE') { json(res, targets.remove(id) ? 204 : 404, {}); return true; }
+    }
+    json(res, 404, { error: 'unknown api route' });
+  } catch (err) {
+    json(res, 400, { error: (err as Error).message });
+  }
+  return true;
+}
+
+async function onRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? '/', 'https://x');
+  const pathname = decodeURIComponent(url.pathname);
+  if (ingest.handlePost(req, res, pathname, url.searchParams)) return;
+  if (await handleApi(req, res, pathname)) return;
+  if (staticHandler(req, res, pathname)) return;
+  if (!existsSync(config.clientDir)) {
+    res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('client not built yet — run `npm run build` or wait for `vite build --watch`');
+    return;
+  }
+  notFound(res);
+}
+
+function onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, allowPhones: boolean): void {
+  const pathname = new URL(req.url ?? '/', 'https://x').pathname;
+  const route =
+    pathname === '/ws' && allowPhones ? ingest.wss
+    : pathname === '/feed' ? feed.wss
+    : pathname === '/monitor-ws' ? monitor.wss
+    : null;
+  if (!route) { socket.destroy(); return; }
+  route.handleUpgrade(req, socket, head, (ws) => route.emit('connection', ws, req));
+}
+
+// --- listen -------------------------------------------------------------------
+
+const https = createHttpsServer({ key: credentials.key, cert: credentials.cert }, (req, res) => { void onRequest(req, res); });
+https.on('upgrade', (req, socket, head) => onUpgrade(req, socket, head, true));
+
+// Plain HTTP serves the dashboard, its API and assets — the Mac needs no
+// sensors, so it needs no certificate warning either. The phone app itself
+// redirects to HTTPS, because without it there are no sensors.
+const http = createHttpServer((req, res) => {
+  const url = new URL(req.url ?? '/', 'http://x');
+  const pathname = decodeURIComponent(url.pathname);
+  const host = (req.headers.host ?? 'localhost').replace(/:\d+$/, '');
+  // `localhost` is a secure context even over HTTP, so the phone page can be
+  // developed here without a certificate; a phone on the LAN gets redirected.
+  const phonePage = (pathname === '/' || pathname === '/index.html') && host !== 'localhost' && host !== '127.0.0.1';
+  if (!phonePage) {
+    void (async () => {
+      if (await handleApi(req, res, pathname)) return;
+      if (staticHandler(req, res, pathname)) return;
+      notFound(res);
+    })();
+    return;
+  }
+  res.writeHead(302, { Location: `https://${host}:${config.httpsPort}${pathname}${url.search}` });
+  res.end();
+});
+// Plain-HTTP upgrades: feed and monitor only — phones must come over TLS.
+http.on('upgrade', (req, socket, head) => onUpgrade(req, socket, head, false));
+
+https.listen(config.httpsPort, '0.0.0.0', () => {
+  http.listen(config.httpPort, '0.0.0.0', async () => {
+    registry.start();
+    swarm.start();
+    monitor.start();
+
+    console.log('');
+    console.log('  HIVE — swarm audio backend');
+    console.log('');
+    for (const a of addresses) console.log(`  phones:   https://${a.address}:${config.httpsPort}   (${a.iface})`);
+    if (addresses.length === 0) console.log('  phones:   no LAN address found — are you on Wi-Fi?');
+    console.log(`  monitor:  http://localhost:${config.httpPort}/monitor`);
+    console.log(`  feed:     ws://${ips[0] ?? 'localhost'}:${config.httpPort}/feed`);
+    console.log(`  osc →     ${targets.all().map((t) => `${t.host}:${t.port}${t.enabled ? '' : ' (off)'}`).join(', ')}`);
+    console.log('');
+    console.log(await QRCode.toString(qrUrl, { type: 'terminal', small: true }));
+
+    const simCount = Number(process.env.HIVE_SIMULATE ?? 0);
+    if (simCount > 0) { startSimulation(registry, simCount); log(`simulating ${simCount} device(s)`); }
+  });
+});
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    log('shutting down');
+    registry.stop(); swarm.stop(); monitor.stop(); osc.close();
+    https.close(); http.close();
+    process.exit(0);
+  });
+}
