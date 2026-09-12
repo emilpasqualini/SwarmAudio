@@ -462,6 +462,7 @@ async def run(args: argparse.Namespace) -> None:
     preview_period = 1.0 / 8
     last_t = time.time()
     last_detect = 0.0
+    read_failures = 0
     frame_index = 0
     last_people_t = time.time()
     last_result = None
@@ -485,8 +486,22 @@ async def run(args: argparse.Namespace) -> None:
             if args.source is not None:  # a clip: loop it
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
-            print("[vision] camera read failed", file=sys.stderr)
-            break
+            # A camera that stops delivering — an iPhone (Continuity Camera)
+            # renegotiating, locking, or wandering off — is not the end: wait,
+            # then reopen, and only give up after a long silence.
+            read_failures += 1
+            if read_failures == 1:
+                print("[vision] camera stopped delivering frames — waiting (an iPhone camera needs to be unlocked and nearby)", flush=True)
+            if read_failures % 40 == 0:
+                print("[vision] reopening the camera…", flush=True)
+                cap.release()
+                cap = open_capture(args) or cap
+            if read_failures > 400:   # ~ a minute
+                print("[vision] no frames for a minute — giving up", file=sys.stderr)
+                break
+            await asyncio.sleep(0.15)
+            continue
+        read_failures = 0
         if settings["mirror"]:   # flip the picture itself: coordinates, preview and skeletons all agree
             frame = cv2.flip(frame, 1)
         h, w = frame.shape[:2]
