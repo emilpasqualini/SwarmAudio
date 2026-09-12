@@ -120,6 +120,7 @@ async function join(): Promise<void> {
       else scheduleRender();
     },
     onLog: (line) => log.log(line),
+    onWall: (text) => swarmMap?.receive(text),
   });
   transport.start();
   motion = startMotion(platform, onSample, () => { log.warn('no motion events'); showError('nodata'); });

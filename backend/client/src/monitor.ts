@@ -16,7 +16,7 @@ import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
-import { SETTINGS_LIMITS } from '../../shared/types';
+import { SETTINGS_LIMITS, wifiQrText } from '../../shared/types';
 import { EVENT_MESSAGES, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
@@ -84,6 +84,9 @@ const refs = {
   tbody: el('tbody'),
   tonesButton: el('button', { class: 'pill quiet', text: 'Test tones: off' }),
   queenNote: el('span', { class: 'note', text: 'none' }),
+  wifiCard: el('div', { class: 'stack', hidden: true }),
+  wifiQr: el('div', { class: 'qr' }),
+  wifiName: el('div', { class: 'url' }),
   queenClear: el('button', { class: 'pill small quiet', text: 'none', title: 'no queen; the next one is crowned after queen after seconds' }),
   volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
   settingsCard: el('div', { class: 'card stack' }),
@@ -138,8 +141,10 @@ function buildProtocolCard(): void {
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
 type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter';
-type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot';
+type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
+const textInputs = new Map<TextKey, HTMLInputElement>();
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
 
 async function patchSettings(patch: Partial<Settings>): Promise<void> {
@@ -158,6 +163,15 @@ function numberSetting(key: NumKey, label: string, hint: string, step = 1): HTML
   input.onchange = commit;
   input.onkeydown = (e) => { if (e.key === 'Enter') { commit(); input.blur(); } };
   numInputs.set(key, input);
+  return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, input, el('span', { class: 'hint', text: hint }))];
+}
+
+function textSetting(key: TextKey, label: string, hint: string, placeholder = ''): HTMLElement[] {
+  const input = el('input', { type: 'text', placeholder, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+  const commit = (): void => { if (input.value !== state?.settings[key]) void patchSettings({ [key]: input.value }); };
+  input.onchange = commit;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { commit(); input.blur(); } };
+  textInputs.set(key, input);
   return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, input, el('span', { class: 'hint', text: hint }))];
 }
 
@@ -182,6 +196,9 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('filterBeta', 'filter: beta', 'how much the cutoff rises with speed of change; higher = snappier gestures', 0.05),
       ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
       ...numberSetting('zeroTau', 'zero: slide time', 's — time constant of the zero sliding over; rel → 0 at rest', 0.1),
+      ...boolSetting('wifiHotspot', 'iphone hotspot', 'on: the phones join an iPhone personal hotspot (name + password are under settings → personal hotspot on that iPhone; turn on "maximise compatibility"; that iPhone itself cannot join). off: any other wi-fi'),
+      ...textSetting('wifiSsid', 'wi-fi name', 'shown as a QR code here and on the wall; macOS hides the SSID from apps, so type it', "Emil's iPhone"),
+      ...textSetting('wifiPassword', 'wi-fi password', 'empty = open network'),
       ...boolSetting('oscWide', 'osc /hive/sample', 'the wide message: everything per sample, fixed order — see protocol card'),
       ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
       ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
@@ -194,7 +211,25 @@ function buildSettingsCard(h: MonitorHello): void {
   );
 }
 
+let wifiDrawn = '';
+function drawWifiQr(s: Settings): void {
+  const text = s.wifiSsid ? wifiQrText(s.wifiSsid, s.wifiPassword) : '';
+  if (text === wifiDrawn) return;
+  wifiDrawn = text;
+  refs.wifiCard.hidden = !text;
+  if (!text) return;
+  const canvas = document.createElement('canvas');
+  refs.wifiQr.replaceChildren(canvas);
+  QRCode.toCanvas(canvas, text, { width: 220, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
+    .catch((err: Error) => log.fail(`wi-fi QR: ${err.message}`));
+  refs.wifiName.textContent = s.wifiSsid;
+}
+
 function updateSettings(s: Settings): void {
+  for (const [key, input] of textInputs) {
+    if (document.activeElement !== input) input.value = s[key];
+  }
+  drawWifiQr(s);
   const queen = state?.devices.find((d) => d.uid === s.queenUid);
   refs.queenNote.textContent = s.queenUid ? `${queen ? `#${queen.slot} ${queen.name || ''}`.trim() : 'away'} · ${s.queenUid} — ♛ in the table crowns, a bee flying into her takes over` : 'none yet — the phone that moves most is crowned';
   refs.queenClear.hidden = !s.queenUid;
@@ -227,6 +262,11 @@ function buildPage(): void {
   if (!hello) return;
 
   drawAddresses();
+  refs.wifiCard.replaceChildren(
+    el('div', { class: 'section-label', text: 'scan to join the wi-fi first' }),
+    refs.wifiQr,
+    refs.wifiName,
+  );
 
   // Add-target form.
   const spec = el('input', { type: 'text', placeholder: 'host:port  e.g. 192.168.2.14:9001', autocomplete: 'off' });
@@ -256,6 +296,7 @@ function buildPage(): void {
         el('div', { class: 'section-label', text: 'scan to join' }),
         refs.qr,
         refs.urls,
+        refs.wifiCard,
         el('div', { class: 'section-label', text: 'for the projector' }),
         el('p', { class: 'note' },
           'Open ', el('a', { href: '/wall', target: '_blank', text: `${location.origin}/wall` }),

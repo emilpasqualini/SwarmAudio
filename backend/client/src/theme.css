@@ -343,6 +343,9 @@ body.wall #app > * { transition: opacity 0.4s ease; }
 .wall-join { width: 300px; background: rgba(14, 14, 16, 0.85); backdrop-filter: blur(8px); }
 .wall-join .qr canvas { max-width: 260px; padding: 10px; }
 .wall-join .url { margin-top: 8px; font-size: 0.85rem; }
+/* With a wi-fi card the join card moves right to make room: 1 wi-fi, 2 join. */
+.wall-wifi { z-index: 3; }
+body.has-wifi .wall-join:not(.wall-wifi) { left: 340px; }
 .wall-steps { margin-top: 6px; font-size: 0.78rem; }
 .wall-swarm { display: flex; gap: 22px; }
 .wall-stat .v { display: block; font-family: var(--serif); font-size: 1.8rem; line-height: 1; }

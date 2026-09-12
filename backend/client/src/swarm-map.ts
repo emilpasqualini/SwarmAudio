@@ -4,63 +4,67 @@
 //
 //  The wall in miniature: one dot per bee, yours ringed, the queen golden.
 //
-//  Positions come from the wall — the flight model runs there — via the
-//  server's `/api/wall` snapshot, polled four times a second and eased between
-//  polls so the dots glide rather than jump. Polling rather than a socket
-//  because iPhones reach the server over POST only (self-signed certificate,
-//  no wss), and a small GET every 250 ms is nothing next to the sensor stream.
+//  Positions come from the wall — the flight model runs there — and reach the
+//  phone on the link it already has: as the reply to a POSTed frame, or as a
+//  text message down the socket (transport.ts). Ten snapshots a second; the
+//  map draws a fifth of a second behind and slides each dot between the two
+//  snapshots around that moment, so the picture moves at the wall's pace
+//  rather than in ten steps a second. Nothing is polled.
 //
 
 import { slotColour } from './dom';
 
-interface WallBee { uid: string; slot: number; x: number; y: number; h: number }
-interface Snapshot { t: number; queenUid: string; bees: WallBee[] }
+/** `{ v, q, b: [[uid, slot, x, y, h], …] }` — see server/wall.ts. */
+interface Wire { v: number; q: string; b: [string, number, number, number, number][] }
 
-const POLL_MS = 250;
+const DELAY_MS = 200;           // render this far behind the newest snapshot
 const QUEEN_COLOUR = '#f2c14e';
+
+interface Track {
+  slot: number;
+  // the two snapshots the render time falls between
+  x0: number; y0: number; h0: number; t0: number;
+  x1: number; y1: number; h1: number; t1: number;
+  seen: number;
+}
+
+const lerpAngle = (a: number, b: number, k: number): number => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
 
 export class SwarmMap {
   readonly canvas = document.createElement('canvas');
   slot: number | null = null;
   private queenUid = '';
-  private readonly dots = new Map<string, { x: number; y: number; tx: number; ty: number; h: number; slot: number; seen: number }>();
-  private timer: number | null = null;
+  private readonly tracks = new Map<string, Track>();
   private raf = 0;
-  private inflight = false;
+  private version = 0;
 
   constructor(private readonly myUid: string) {
     this.canvas.className = 'swarm-map';
-    this.timer = window.setInterval(() => void this.poll(), POLL_MS);
-    void this.poll();
     const frame = (): void => { this.draw(); this.raf = requestAnimationFrame(frame); };
     this.raf = requestAnimationFrame(frame);
   }
 
   get iAmQueen(): boolean { return this.queenUid !== '' && this.queenUid === this.myUid; }
 
-  stop(): void {
-    if (this.timer !== null) clearInterval(this.timer);
-    cancelAnimationFrame(this.raf);
-    this.timer = null;
-  }
+  stop(): void { cancelAnimationFrame(this.raf); }
 
-  private async poll(): Promise<void> {
-    if (this.inflight || document.visibilityState !== 'visible') return;
-    this.inflight = true;
-    try {
-      const res = await fetch('/api/wall', { cache: 'no-store' });
-      if (!res.ok) return;
-      const snap = (await res.json()) as Snapshot;
-      this.queenUid = snap.queenUid;
-      const now = performance.now();
-      for (const b of snap.bees) {
-        const d = this.dots.get(b.uid);
-        if (d) { d.tx = b.x; d.ty = b.y; d.h = b.h; d.slot = b.slot; d.seen = now; }
-        else this.dots.set(b.uid, { x: b.x, y: b.y, tx: b.x, ty: b.y, h: b.h, slot: b.slot, seen: now });
-      }
-      for (const [uid, d] of this.dots) if (now - d.seen > 2000) this.dots.delete(uid);
-    } catch { /* offline for a moment — keep the last picture */ }
-    finally { this.inflight = false; }
+  /** A snapshot from the server, as text. Out-of-order or repeated ones are ignored. */
+  receive(text: string): void {
+    let w: Wire;
+    try { w = JSON.parse(text) as Wire; } catch { return; }
+    if (typeof w.v !== 'number' || w.v <= this.version || !Array.isArray(w.b)) return;
+    this.version = w.v;
+    this.queenUid = w.q;
+    const now = performance.now();
+    for (const [uid, slot, x, y, h] of w.b) {
+      const t = this.tracks.get(uid);
+      if (!t) { this.tracks.set(uid, { slot, x0: x, y0: y, h0: h, t0: now, x1: x, y1: y, h1: h, t1: now, seen: now }); continue; }
+      // the newest becomes the target; the previous target becomes the start
+      t.x0 = t.x1; t.y0 = t.y1; t.h0 = t.h1; t.t0 = t.t1;
+      t.x1 = x; t.y1 = y; t.h1 = h; t.t1 = now;
+      t.slot = slot; t.seen = now;
+    }
+    for (const [uid, t] of this.tracks) if (now - t.seen > 2000) this.tracks.delete(uid);
   }
 
   private draw(): void {
@@ -73,12 +77,14 @@ export class SwarmMap {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const r = Math.max(3, Math.min(w, h) * 0.035);
-    const ease = 0.18;
-    for (const [uid, d] of this.dots) {
-      d.x += (d.tx - d.x) * ease; d.y += (d.ty - d.y) * ease;
-      const px = d.x * w, py = d.y * h;
+    const renderT = performance.now() - DELAY_MS;
+    for (const [uid, t] of this.tracks) {
+      const span = t.t1 - t.t0;
+      const k = span > 0 ? Math.max(0, Math.min(1, (renderT - t.t0) / span)) : 1;
+      const x = t.x0 + (t.x1 - t.x0) * k, y = t.y0 + (t.y1 - t.y0) * k, hd = lerpAngle(t.h0, t.h1, k);
+      const px = x * w, py = y * h;
       const mine = uid === this.myUid, queen = uid === this.queenUid;
-      const colour = queen ? QUEEN_COLOUR : slotColour(d.slot);
+      const colour = queen ? QUEEN_COLOUR : slotColour(t.slot);
       const rr = queen ? r * 1.7 : r;
       // a short tail shows the heading
       ctx.strokeStyle = colour;
@@ -87,7 +93,7 @@ export class SwarmMap {
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(px, py);
-      ctx.lineTo(px - Math.cos(d.h) * rr * 2.2, py - Math.sin(d.h) * rr * 2.2);
+      ctx.lineTo(px - Math.cos(hd) * rr * 2.2, py - Math.sin(hd) * rr * 2.2);
       ctx.stroke();
       ctx.fillStyle = colour;
       ctx.beginPath(); ctx.arc(px, py, rr, 0, Math.PI * 2); ctx.fill();

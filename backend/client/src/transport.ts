@@ -20,6 +20,8 @@ export type Status = 'connecting' | 'open' | 'reconnecting' | 'down';
 export interface TransportEvents {
   onStatus: (status: Status, mode: Mode) => void;
   onLog: (line: string) => void;
+  /** The server's reply on the same link: where the bees are on the wall (JSON text). */
+  onWall?: (text: string) => void;
 }
 
 const WS_OPEN_TIMEOUT = 1500;
@@ -77,12 +79,14 @@ export class Transport {
       // No `keepalive: true` here: that flag is for requests that must outlive
       // the page, and Safari serves those on a slower path. The leave beacon
       // is the one request that needs it.
-    }).then((res) => {
+    }).then(async (res) => {
       this.inflight--;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       this.sent++;
       this.postFailures = 0;
       if (this.status !== 'open') this.setStatus('open');
+      // 200 carries the wall snapshot; 204 means nothing new since the last one.
+      if (res.status === 200 && this.events.onWall) this.events.onWall(await res.text());
     }).catch((err: Error) => {
       this.inflight--;
       this.postFailures++;
@@ -129,6 +133,8 @@ export class Transport {
       this.events.onLog('WebSocket open');
       this.setStatus('open');
     };
+    // Text down the socket is the wall snapshot; the phone never receives binary.
+    ws.onmessage = (e) => { if (typeof e.data === 'string') this.events.onWall?.(e.data); };
     ws.onerror = () => { /* onclose follows with the useful information */ };
     ws.onclose = (e) => {
       clearTimeout(openTimeout);
