@@ -1,2 +1,7 @@
 .DS_Store
 node_modules/
+__pycache__/
+
+# downloaded Neutone models: large, and re-fetchable from morpho/models/index.json
+morpho/models/*.nm
+morpho/presets/
