@@ -10,6 +10,7 @@
 //
 
 import { DEFAULT_SETTINGS, SETTINGS_LIMITS } from '../shared/types';
+import { MUTABLE } from '../shared/osc-schema';
 import type { Settings } from '../shared/types';
 import type { Store } from './store';
 import type { Registry } from './registry';
@@ -18,6 +19,7 @@ import type { OscOut } from './osc';
 import { startSimulation } from './simulate';
 import type { Global } from './global';
 import type { VisionIn } from './vision';
+import type { Mix } from './mix';
 
 export class SettingsController {
   private stopSimulation: (() => void) | null = null;
@@ -30,6 +32,7 @@ export class SettingsController {
     private readonly osc: OscOut,
     private readonly global: Global,
     private readonly vision: VisionIn,
+    private readonly mix: Mix,
   ) {}
 
   get current(): Settings { return this.store.settings; }
@@ -58,7 +61,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n * 100) / 100;
     }
-    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal'] as const) {
+    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal', 'oscMix'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
     for (const key of ['wifiSsid', 'wifiPassword'] as const) {
@@ -70,6 +73,12 @@ export class SettingsController {
     // Reset: a new round. The queen is cleared, the wall re-spawns, the queen
     // keeper starts counting afresh, and the swarm waits for Start again.
     if (patch['reset']) { next.round = (next.round || 0) + 1; next.queenUid = ''; next.running = false; }
+    if (patch['oscMute'] !== undefined) {
+      const list = patch['oscMute'];
+      if (!Array.isArray(list)) return 'oscMute must be a list of keys';
+      const known = new Set(MUTABLE.map((m) => m.key));
+      next.oscMute = [...new Set(list.map(String).filter((k) => known.has(k)))];
+    }
     if (patch['queenUid'] !== undefined) {
       const uid = String(patch['queenUid']);
       if (!/^[0-9a-z]{0,8}$/.test(uid)) return 'queenUid must be an 8-character uid or empty';
@@ -86,7 +95,10 @@ export class SettingsController {
   private applyTo(s: Settings, previous: Settings): void {
     if (s.swarmHz !== previous.swarmHz) this.swarm.setHz(s.swarmHz);
     if (s.deviceTimeoutMs !== previous.deviceTimeoutMs) this.registry.setTimeout(s.deviceTimeoutMs);
-    this.osc.flags = { wide: s.oscWide, perField: s.oscPerField, roster: s.oscRoster, swarm: s.oscSwarm, global: s.oscGlobal, cam: s.oscCam, camPersons: s.oscCamPersons };
+    this.osc.flags = { wide: s.oscWide, perField: s.oscPerField, roster: s.oscRoster, swarm: s.oscSwarm, global: s.oscGlobal, cam: s.oscCam, camPersons: s.oscCamPersons, mix: s.oscMix };
+    this.osc.muted = new Set(s.oscMute);
+    this.mix.setHz(s.swarmHz);
+    this.mix.queenUid = s.queenUid;
     this.global.setHz(s.swarmHz);
     this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview });
     this.registry.condition.idleAfter = s.zeroIdleAfter;

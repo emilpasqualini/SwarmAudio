@@ -82,6 +82,41 @@ export const CAM_FIELDS: Field[] = [
   { name: 'cx',       type: 'f', unit: '0..1', description: 'Centroid of everyone, left→right.' },
   { name: 'cy',       type: 'f', unit: '0..1', description: 'Centroid of everyone, top→bottom.' },
   { name: 'armsUp',   type: 'f', unit: '0..2', description: 'Mean number of raised arms per person.' },
+  // --- how the crowd moves, from frame to frame (computed on the server) ---
+  { name: 'flowX',    type: 'f', unit: '1/s',  description: 'Mean velocity of everyone, left→right, in frame widths per second. Where the crowd drifts.' },
+  { name: 'flowY',    type: 'f', unit: '1/s',  description: 'Mean velocity, top→bottom.' },
+  { name: 'turbulence', type: 'f', unit: '1/s', description: 'Spread of the velocities around the mean flow. 0 = everyone drifts together, high = milling about.' },
+  { name: 'moveSync', type: 'f', unit: '−1..1', description: 'Mean pairwise cosine similarity of velocities: 1 = moving the same way, −1 = toward/away from each other, 0 = unrelated. Only counts people who move.' },
+  { name: 'converge', type: 'f', unit: '1/s',  description: 'Rate of change of spread, smoothed. Negative = people are coming together, positive = dispersing.' },
+  { name: 'nearest',  type: 'f', unit: '0..1', description: 'Mean distance to one\'s nearest neighbour, in frame widths. Small = close contact.' },
+  { name: 'stillness', type: 'f', unit: '0..1', description: 'Fraction of people who are standing still.' },
+  { name: 'occupancy', type: 'f', unit: '0..1', description: 'Fraction of a 4×3 grid over the picture that has someone in it — how much of the room is in use.' },
+];
+
+/** `/hive/mix` — where the bees on the wall and the people the camera sees meet (v3). */
+export const MIX_FIELDS: Field[] = [
+  { name: 't',            type: 'f', unit: 's',    description: 'Seconds since the server started.' },
+  { name: 'bees',         type: 'i', unit: '',     description: 'Bees on the wall (phones in the swarm).' },
+  { name: 'people',       type: 'i', unit: '',     description: 'People the camera sees.' },
+  { name: 'distance',     type: 'f', unit: '0..1', description: 'Distance between the bees\' centroid and the crowd\'s centroid (both 0..1 across their picture). 0 = the swarm hovers over the crowd.' },
+  { name: 'beesInCrowd',  type: 'f', unit: '0..1', description: 'Fraction of bees flying inside one of the camera\'s groups (cluster circle, plus a margin).' },
+  { name: 'queenInCrowd', type: 'i', unit: '0/1',  description: '1 when the queen bee is inside a group.' },
+  { name: 'covered',      type: 'f', unit: '0..1', description: 'Fraction of people who have a bee within 0.1 of them — how much of the crowd the swarm "touches".' },
+  { name: 'alignment',    type: 'f', unit: '−1..1', description: 'Cosine between the bees\' mean heading and the crowd\'s flow. 1 = swarm and crowd move the same way.' },
+  { name: 'balance',      type: 'f', unit: '0..1', description: 'bees / (bees + people): 0.5 = as many phones as bodies, 1 = only phones, 0 = only bodies.' },
+];
+
+/**
+ * Every small message that can be muted on its own (dashboard: osc parameters).
+ * The key is the address without the /hive/ prefix and without the slot; the wide
+ * messages are governed by their family switches instead.
+ */
+export const MUTABLE: { family: string; key: string }[] = [
+  ...['acc', 'rel', 'gyro', 'activity', 'mag', 'turn'].map((k) => ({ family: 'dev', key: `dev/${k}` })),
+  ...['count', 'energy', 'motion', 'sync'].map((k) => ({ family: 'swarm', key: `swarm/${k}` })),
+  ...['coherence', 'phaseSync', 'tempo', 'centroid', 'entropy', 'dispersion', 'leanX', 'leanY', 'onsets', 'crest'].map((k) => ({ family: 'global', key: `global/${k}` })),
+  ...['count', 'clusters', 'spread', 'energy', 'centroid', 'armsUp', 'flow', 'turbulence', 'moveSync', 'converge', 'nearest', 'stillness', 'occupancy', 'cluster', 'person', 'status'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
+  ...['distance', 'beesInCrowd', 'queenInCrowd', 'covered', 'alignment', 'balance'].map((k) => ({ family: 'mix', key: `mix/${k}` })),
 ];
 
 /** Events and housekeeping, with their argument lists. */
@@ -103,8 +138,9 @@ export const EVENT_MESSAGES: MessageDoc[] = [
 
 /** Camera messages besides the wide /hive/cam. */
 export const CAM_MESSAGES: MessageDoc[] = [
-  { address: '/hive/cam/count · clusters · spread · energy · armsUp', args: 'i / f',                          when: 'every camera frame',              description: 'Twins of the wide fields, one each — handy for REAPER\'s Learn.' },
+  { address: '/hive/cam/<field>', args: 'i / f',                                                              when: 'every camera frame',              description: 'Twins of the wide fields, one each (count, clusters, spread, energy, armsUp, turbulence, moveSync, converge, nearest, stillness, occupancy) — handy for REAPER\'s Learn.' },
   { address: '/hive/cam/centroid', args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where everyone is on average.' },
+  { address: '/hive/cam/flow',     args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where the crowd drifts, frame widths per second.' },
   { address: '/hive/cam/cluster', args: 'i index · i n · f x · f y · f r',                                     when: 'every camera frame, per cluster', description: 'x, y centre and r radius in frame widths; n people in it. Index 0..clusters−1.' },
   { address: '/hive/cam/person',  args: 'i id · f x · f y · f depth · f armsUp · f crouch · f energy',        when: 'every camera frame, per person (switchable)', description: 'id is the tracker\'s, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1.' },
   { address: '/hive/cam/status',  args: 'i connected · f fps',                                                   when: 'every second',                    description: 'Whether the camera process is attached and how fast it runs.' },

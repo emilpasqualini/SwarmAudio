@@ -7,3 +7,4 @@ node_modules/
 # camera pipeline: virtualenv and downloaded model weights
 backend/vision/.venv/
 backend/vision/models/
+__pycache__/

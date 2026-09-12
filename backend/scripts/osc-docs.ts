@@ -2,7 +2,7 @@
 // The doc is generated so it cannot drift from what the server sends.
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, OSC_SCHEMA_VERSION, PER_FIELD_MESSAGES, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../shared/osc-schema';
+import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, MIX_FIELDS, MUTABLE, OSC_SCHEMA_VERSION, PER_FIELD_MESSAGES, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../shared/osc-schema';
 import type { Field, MessageDoc } from '../shared/osc-schema';
 
 const fieldTable = (fields: Field[]): string => [
@@ -105,6 +105,26 @@ mirrored when the dashboard says so.
 ${fieldTable(CAM_FIELDS)}
 
 ${messageTable(CAM_MESSAGES)}
+
+The last eight fields are the crowd's *motion*, computed on the server from
+frame to frame: where it drifts (flow), how disordered (turbulence), whether
+people move alike (moveSync), whether they come together (converge < 0), how
+close they stand (nearest), how many stand still, how much of the room is used.
+
+## \`/hive/mix\` — bees ⇄ camera (${MIX_FIELDS.length} arguments, v3)
+
+Where the swarm on the wall and the crowd in the picture meet. Both are 0..1
+across their picture, so the server can relate them even though nobody is
+matched to a phone. At the swarm rate; each field also as \`/hive/mix/<name>\`.
+
+${fieldTable(MIX_FIELDS)}
+
+## Switching things off
+
+Every family has a switch on the dashboard (settings: *osc …*), and every
+small message has its own chip under *osc parameters* — off means not sent,
+which saves Wi-Fi traffic for whatever nobody patches. Mutable keys:
+${MUTABLE.map((m) => `\`${m.key}\``).join(', ')}.
 
 **REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
 *Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that

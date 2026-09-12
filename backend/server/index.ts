@@ -26,6 +26,7 @@ import { QueenKeeper } from './queen';
 import { WallState } from './wall';
 import { Global } from './global';
 import { VisionIn } from './vision';
+import { Mix } from './mix';
 import { Targets, parseHostPort } from './targets';
 import { OscOut } from './osc';
 import { Swarm } from './swarm';
@@ -54,15 +55,16 @@ const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const global = new Global(registry, store.settings.swarmHz);
 const vision = new VisionIn(log);
-const settings = new SettingsController(store, registry, swarm, osc, global, vision);
-const queen = new QueenKeeper(registry, settings);
 const wall = new WallState(store.settings.queenUid, store.settings.running);
+const mix = new Mix(wall, vision, store.settings.swarmHz);
+const settings = new SettingsController(store, registry, swarm, osc, global, vision, mix);
+const queen = new QueenKeeper(registry, settings);
 
-const feed = new Feed(registry, swarm, global, vision);
+const feed = new Feed(registry, swarm, global, vision, mix);
 const ingest = createIngest(registry, wall, log);
 const monitor = new Monitor(
   { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile, bootId: String(Date.now()) },
-  registry, targets, swarm, feed, settings, global, vision, config.monitorHz,
+  registry, targets, swarm, feed, settings, global, vision, mix, config.monitorHz,
 );
 
 registry.on('sample', (s) => osc.sample(s));
@@ -70,6 +72,7 @@ registry.on('join', (d) => { osc.join(d, registry.count); log(`#${d.slot} joined
 registry.on('leave', (d) => { osc.leave(d, registry.count); log(`#${d.slot} left`); });
 swarm.on((f) => osc.swarm(f));
 global.on((g) => osc.global(g));
+mix.on((m) => osc.mix(m));
 vision.onFrame((f) => { osc.cam(f); osc.camStatus = { connected: true, fps: f.fps }; });
 setInterval(() => { if (!vision.connected) osc.camStatus = { connected: false, fps: 0 }; }, 1000);
 
@@ -222,6 +225,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     registry.start();
     swarm.start();
     global.start();
+    mix.start();
     monitor.start();
     osc.start();
     queen.start();

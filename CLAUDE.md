@@ -5,9 +5,10 @@ sound installation. One repo, one folder per workstream — keep your work in
 your folder and do not reshape others'.
 
 ```
-backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
-             → see backend/README.md for run instructions, OSC map, team setup
-<yours>/     Pd patches, SuperCollider, datasets, visuals, …
+backend/         Node/TypeScript server + phone web app + dashboard   (Emil)
+                 → see backend/README.md for run instructions, OSC map, team setup
+backend/vision/  Python camera pipeline (YOLO11n-pose) feeding the server; own venv
+<yours>/         Pd patches, SuperCollider, datasets, visuals, …
 ```
 
 ## Working agreements
@@ -18,9 +19,12 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
   the wide messages; bump `OSC_SCHEMA_VERSION` when you do; never rename or
   reorder — everyone's patches depend on it. Same for the binary phone frame
   in `backend/shared/protocol.ts`.
-- New signal processing goes into `backend/server/condition.ts` (per device)
-  or `backend/server/swarm.ts` (whole swarm), then becomes a new schema field.
-  Phones send raw sensors only; all computation happens on the server.
+- New signal processing goes into `backend/server/condition.ts` (per device),
+  `backend/server/swarm.ts` / `global.ts` (whole swarm), `vision.ts` (camera
+  crowd) or `mix.ts` (bees ⇄ camera), then becomes a new schema field and a
+  `MUTABLE` key. Phones and the camera process send raw observations only;
+  all computation happens on the server. Python side: numpy only — no
+  scikit-learn, no python-osc.
 - Commits are authored by the humans on the team — no AI co-author trailers.
 - Backend: TypeScript, strict, no framework on the client, hand-written DOM.
   Comments explain *why* (see the file headers); match that style.

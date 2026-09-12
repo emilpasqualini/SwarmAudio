@@ -113,11 +113,11 @@ Windows: the correlation and phase features look at the last second per phone;
 tempo, centroid and crest at ~4 s / ~2 s of the swarm's mean |rel| sampled at
 the swarm rate. All zero with fewer than two phones (tempo/centroid need one).
 
-## `/hive/cam` — the room as the camera sees it (8 arguments, v3)
+## `/hive/cam` — the room as the camera sees it (16 arguments, v3)
 
 From `backend/vision/hive_vision.py` (YOLO pose on a webcam, see the backend
 README) at the camera's frame rate, only while it is attached. Type tags:
-`fiifffff`. People here are anonymous tracker ids — they are
+`fiifffffffffffff`. People here are anonymous tracker ids — they are
 never matched to phones; someone can be in the picture without a phone or in
 the hive without being in the picture. Coordinates are 0..1 of the frame,
 mirrored when the dashboard says so.
@@ -132,14 +132,53 @@ mirrored when the dashboard says so.
 | 6 | `cx` | f | 0..1 | Centroid of everyone, left→right. |
 | 7 | `cy` | f | 0..1 | Centroid of everyone, top→bottom. |
 | 8 | `armsUp` | f | 0..2 | Mean number of raised arms per person. |
+| 9 | `flowX` | f | 1/s | Mean velocity of everyone, left→right, in frame widths per second. Where the crowd drifts. |
+| 10 | `flowY` | f | 1/s | Mean velocity, top→bottom. |
+| 11 | `turbulence` | f | 1/s | Spread of the velocities around the mean flow. 0 = everyone drifts together, high = milling about. |
+| 12 | `moveSync` | f | −1..1 | Mean pairwise cosine similarity of velocities: 1 = moving the same way, −1 = toward/away from each other, 0 = unrelated. Only counts people who move. |
+| 13 | `converge` | f | 1/s | Rate of change of spread, smoothed. Negative = people are coming together, positive = dispersing. |
+| 14 | `nearest` | f | 0..1 | Mean distance to one's nearest neighbour, in frame widths. Small = close contact. |
+| 15 | `stillness` | f | 0..1 | Fraction of people who are standing still. |
+| 16 | `occupancy` | f | 0..1 | Fraction of a 4×3 grid over the picture that has someone in it — how much of the room is in use. |
 
 | address | arguments | when | meaning |
 |---|---|---|---|
-| `/hive/cam/count · clusters · spread · energy · armsUp` | i / f | every camera frame | Twins of the wide fields, one each — handy for REAPER's Learn. |
+| `/hive/cam/<field>` | i / f | every camera frame | Twins of the wide fields, one each (count, clusters, spread, energy, armsUp, turbulence, moveSync, converge, nearest, stillness, occupancy) — handy for REAPER's Learn. |
 | `/hive/cam/centroid` | f x · f y | every camera frame | Where everyone is on average. |
+| `/hive/cam/flow` | f x · f y | every camera frame | Where the crowd drifts, frame widths per second. |
 | `/hive/cam/cluster` | i index · i n · f x · f y · f r | every camera frame, per cluster | x, y centre and r radius in frame widths; n people in it. Index 0..clusters−1. |
 | `/hive/cam/person` | i id · f x · f y · f depth · f armsUp · f crouch · f energy | every camera frame, per person (switchable) | id is the tracker's, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1. |
 | `/hive/cam/status` | i connected · f fps | every second | Whether the camera process is attached and how fast it runs. |
+
+The last eight fields are the crowd's *motion*, computed on the server from
+frame to frame: where it drifts (flow), how disordered (turbulence), whether
+people move alike (moveSync), whether they come together (converge < 0), how
+close they stand (nearest), how many stand still, how much of the room is used.
+
+## `/hive/mix` — bees ⇄ camera (9 arguments, v3)
+
+Where the swarm on the wall and the crowd in the picture meet. Both are 0..1
+across their picture, so the server can relate them even though nobody is
+matched to a phone. At the swarm rate; each field also as `/hive/mix/<name>`.
+
+| # | field | type | unit | meaning |
+|---|---|---|---|---|
+| 1 | `t` | f | s | Seconds since the server started. |
+| 2 | `bees` | i | — | Bees on the wall (phones in the swarm). |
+| 3 | `people` | i | — | People the camera sees. |
+| 4 | `distance` | f | 0..1 | Distance between the bees' centroid and the crowd's centroid (both 0..1 across their picture). 0 = the swarm hovers over the crowd. |
+| 5 | `beesInCrowd` | f | 0..1 | Fraction of bees flying inside one of the camera's groups (cluster circle, plus a margin). |
+| 6 | `queenInCrowd` | i | 0/1 | 1 when the queen bee is inside a group. |
+| 7 | `covered` | f | 0..1 | Fraction of people who have a bee within 0.1 of them — how much of the crowd the swarm "touches". |
+| 8 | `alignment` | f | −1..1 | Cosine between the bees' mean heading and the crowd's flow. 1 = swarm and crowd move the same way. |
+| 9 | `balance` | f | 0..1 | bees / (bees + people): 0.5 = as many phones as bodies, 1 = only phones, 0 = only bodies. |
+
+## Switching things off
+
+Every family has a switch on the dashboard (settings: *osc …*), and every
+small message has its own chip under *osc parameters* — off means not sent,
+which saves Wi-Fi traffic for whatever nobody patches. Mutable keys:
+`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
 
 **REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
 *Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that

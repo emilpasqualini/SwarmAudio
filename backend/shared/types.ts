@@ -104,6 +104,28 @@ export interface VisionFrame {
   cy: number;
   /** Mean armsUp, 0..2. */
   armsUp: number;
+  /** Crowd motion, computed on the server from frame to frame (see CAM_FIELDS). */
+  flowX: number;
+  flowY: number;
+  turbulence: number;
+  moveSync: number;
+  converge: number;
+  nearest: number;
+  stillness: number;
+  occupancy: number;
+}
+
+/** Where the bees and the camera's people meet (see MIX_FIELDS). */
+export interface MixFeatures {
+  t: number;
+  bees: number;
+  people: number;
+  distance: number;
+  beesInCrowd: number;
+  queenInCrowd: number;
+  covered: number;
+  alignment: number;
+  balance: number;
 }
 
 export interface VisionStatus {
@@ -113,6 +135,14 @@ export interface VisionStatus {
   clusters: number;
   spread: number;
   energy: number;
+  flowX: number;
+  flowY: number;
+  turbulence: number;
+  moveSync: number;
+  converge: number;
+  nearest: number;
+  stillness: number;
+  occupancy: number;
 }
 
 // --- swarm meta-parameters (/hive/global) ---------------------------------------
@@ -207,6 +237,10 @@ export interface Settings {
   camPreview: boolean;
   /** Send /hive/global. */
   oscGlobal: boolean;
+  /** Send /hive/mix (bees ⇄ camera). */
+  oscMix: boolean;
+  /** Small messages switched off individually (keys from MUTABLE in osc-schema.ts) — saves traffic for what nobody uses. */
+  oscMute: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -238,6 +272,8 @@ export const DEFAULT_SETTINGS: Settings = {
   camMirror: true,
   camPreview: true,
   oscGlobal: true,
+  oscMix: true,
+  oscMute: [],
 };
 
 export const SETTINGS_LIMITS = {
@@ -276,6 +312,7 @@ export interface MonitorState {
   swarm: SwarmFeatures;
   global: GlobalFeatures;
   vision: VisionStatus;
+  mix: MixFeatures;
   settings: Settings;
 }
 
@@ -289,7 +326,8 @@ export type FeedMessage =
   | { type: 'leave'; slot: number; uid: string }
   | ({ type: 'swarm' } & SwarmFeatures)
   | ({ type: 'global' } & GlobalFeatures)
-  | ({ type: 'vision' } & VisionFrame);
+  | ({ type: 'vision' } & VisionFrame)
+  | ({ type: 'mix' } & MixFeatures);
 
 // --- wi-fi QR ------------------------------------------------------------------
 

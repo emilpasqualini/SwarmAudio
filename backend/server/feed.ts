@@ -17,6 +17,7 @@ import type { Registry } from './registry';
 import type { Swarm } from './swarm';
 import type { Global } from './global';
 import type { VisionIn } from './vision';
+import type { Mix } from './mix';
 import type { FeedMessage } from '../shared/types';
 
 const MAX_BUFFERED = 64 * 1024;
@@ -25,7 +26,7 @@ export class Feed {
   readonly wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   private readonly clients = new Set<WebSocket>();
 
-  constructor(registry: Registry, swarm: Swarm, global: Global, vision: VisionIn) {
+  constructor(registry: Registry, swarm: Swarm, global: Global, vision: VisionIn, mix: Mix) {
     this.wss.on('connection', (socket) => {
       this.clients.add(socket);
       // Current roster first, so a late subscriber knows who is already there.
@@ -42,6 +43,7 @@ export class Feed {
     swarm.on((f) => this.broadcast({ type: 'swarm', ...f }, true));
     global.on((g) => this.broadcast({ type: 'global', ...g }, true));
     vision.onFrame((f) => this.broadcast({ type: 'vision', ...f }, true));
+    mix.on((m) => this.broadcast({ type: 'mix', ...m }, true));
   }
 
   get subscribers(): number { return this.clients.size; }

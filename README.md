@@ -8,10 +8,10 @@ installation — and, later, lets us play recorded or external swarms (bee data)
 through the same pipeline to hear how they differ.
 
 ```
-phones ──sensors, 60 Hz──▶ backend on the Mac ──OSC/UDP──▶ Pd / Max / SC / Python  (any laptop on the Wi-Fi)
-                                   │
-                                   ├──▶ /wall      projector: wi-fi + join QR codes, the swarm as bees, the queen
-                                   └──▶ /monitor   laptop: config, devices, test tones
+phones ──sensors, 60 Hz──▶ backend on the Mac ──OSC/UDP──▶ Pd / Max / SC / REAPER / Python  (any laptop on the Wi-Fi)
+webcam ──YOLO pose (Python)─▶        │            /hive/sample · swarm · global · cam · mix · queen
+                                   ├──▶ /wall      projector: wi-fi + join QR codes, the swarm as bees, the queen, the crowd as shadows
+                                   └──▶ /monitor   laptop: config, devices, what the camera sees, test tones
 ```
 
 ## Folders
@@ -46,7 +46,10 @@ The short version: `/hive/sample` carries, per phone and sample, a stable
 `uid`, a session `slot`, raw acceleration, re-zeroed acceleration (`rel`, 0 at
 rest at any angle, One-Euro smoothed), gyroscope, an `activity` level,
 magnitudes and `turn` (rotation about the vertical, however the phone is held).
-`/hive/queen` says who the queen bee is. Fields are only ever appended, so
+`/hive/queen` says who the queen bee is; `/hive/global` carries swarm
+meta-parameters (coherence, phase sync, tempo, entropy …); `/hive/cam` what the
+webcam sees (people, groups, gestures, crowd motion — anonymous, never matched
+to phones); `/hive/mix` where bees and crowd meet. Fields are only ever appended, so
 patches keep working as the server learns new tricks. All computation happens
 on the server; phones send raw sensors only.
 

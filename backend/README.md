@@ -11,8 +11,10 @@ phone (Safari / Chrome)        Mac: backend                       sound
  binary frames, ~50 ms batches            │
                                           ├──▶ swarm features @ 30 Hz (energy, motion, sync)
                                           ├──▶ /feed     raw JSON WebSocket (Python etc.)
+                                          ├──▶ /hive/global  swarm meta-parameters (coherence, tempo, entropy …) @ swarm rate
                                           ├──▶ /wall     projector: wi-fi + join QR codes, the swarm as bees, the queen
-                                          └──▶ /monitor  dashboard: config, devices, targets, test tones
+                                          └──▶ /monitor  dashboard: config, devices, targets, camera view, test tones
+webcam ──▶ vision/hive_vision.py (Python, YOLO11n-pose) ──ws──▶ /vision ──▶ /hive/cam · /hive/mix · wall shadows · dashboard picture
 ```
 
 ## Run
@@ -44,6 +46,9 @@ big enough to scan from across a table.
 | queen / queen after | who the queen bee is (♛ in the table crowns one by hand; a bee that flies into her takes the crown; with no queen, the phone that moved most is crowned after *queen after* seconds) |
 | iphone hotspot / wi-fi name / wi-fi password | the network the phones must be on — rendered as a *join this Wi-Fi* QR code on the dashboard and on the wall (step 1, before the join code). macOS hides the SSID from apps, so type it; the hotspot toggle only changes the hints and wording |
 | wall: wi-fi code / join code | show or hide each QR code on the wall — off once everyone is in, and the bees get the whole wall |
+| camera: preview / osc camera / osc per person / cluster radius / mirror / wall coupling / coupling strength | the camera pipeline (see below); *wall coupling* draws the bees toward the crowds the camera sees |
+| osc global / osc mix | switch the meta-parameter families |
+| osc parameters | one chip per small message (dev/acc, swarm/energy, global/tempo, cam/person, mix/covered, …) — off = not sent; saves Wi-Fi traffic for whatever nobody patches |
 | ♛ / × in the device table | crown a device / drop it now |
 | test tones | sonify the swarm on this Mac |
 
@@ -87,11 +92,74 @@ The protocol is documented in **[docs/OSC.md](docs/OSC.md)** — generated from
 /hive/roster   i count · (i slot · s uid · s name)…         /hive/schema i version                            every second
 /hive/queen    s uid · i slot                                when the crown moves, and every second ('' / 0 = none)
 /hive/dev/<slot>/acc|rel|gyro|activity|mag|turn             the same per-sample data, one small message each
+/hive/global   s "global" · f t · i count · coherence · phaseSync · tempo · centroid · entropy · dispersion · leanX · leanY · onsets · crest
+/hive/cam      f t · i count · i clusters · spread · energy · cx · cy · armsUp · flowX · flowY · turbulence · moveSync · converge · nearest · stillness · occupancy
+/hive/cam/cluster · /hive/cam/person · /hive/cam/status      groups, tracked people (anonymous), whether the camera runs
+/hive/mix      f t · i bees · i people · distance · beesInCrowd · queenInCrowd · covered · alignment · balance
 ```
 
 `uid` is stable per phone; `slot` is 1..N per session. Fields are only ever
 appended (`turn` — rotation about the vertical however the phone is held —
 came with schema v2). Each family can be switched off on the dashboard.
+
+## Swarm meta-parameters — `/hive/global`
+
+The hive as one signal, signal-processing style, at the swarm rate
+([server/global.ts](server/global.ts)): **coherence** (pairwise correlation of
+movement over 1 s — do people move alike?), **phaseSync** (Kuramoto order
+parameter — are they in step?), **tempo** (dominant rhythm, Hz, autocorrelation
+of the swarm's energy), **centroid** (spectral centroid — sway or jitter),
+**entropy** (everyone or a soloist), **dispersion** (how different the tilts
+are), **leanX/Y** (where the room leans), **onsets** (bursts per second),
+**crest** (spiky or steady). Live numbers on the dashboard; every field also as
+`/hive/global/<name>`.
+
+## The camera — `backend/vision/`
+
+A second, anonymous layer: a webcam and **YOLO11n-pose** (people + skeletons,
+tracked; Metal-accelerated on Apple Silicon) in a Python process that talks to
+the server. Nobody in the picture is matched to a phone — the camera is a
+*field*, the phones are the agents; people can be in the picture without a
+phone and in the hive without being in the picture.
+
+```bash
+./start.sh --vision            # second terminal; makes vision/.venv on first use, then runs
+./start.sh --vision --show     # …with a preview window
+./start.sh --vision --source clip.mp4   # a video file instead of the camera (loops)
+```
+
+The model (~6 MB) downloads into `vision/models/` on the first run — **do that
+once with internet before the venue**. macOS asks for camera access for the
+terminal you start it from; allow it (System Settings → Privacy & Security →
+Camera) — a process started from an app without that permission gets
+`not authorized to capture video`.
+
+What comes out, per processed frame (~25 fps on an M1 Pro):
+- **people** — tracker id, position, `depth` (box height: closer = bigger),
+  `armsUp` (0–2 wrists above shoulders), `crouch`, `energy` (how fast they move);
+- **clusters** — groups closer than the *cluster radius* (tiny DBSCAN);
+- **room numbers** — count, spread, energy, centroid, mean armsUp;
+- **crowd motion** (server-side, frame to frame) — flow, turbulence,
+  moveSync, converge, nearest, stillness, occupancy.
+
+All of it goes out as `/hive/cam*` OSC (own switches), into `/feed`, onto the
+wall (people as soft shadows, groups as rings; with *wall coupling* the bees
+are drawn toward the crowds) and onto the dashboard, which shows the
+**annotated picture live** (boxes, ids, skeletons, cluster circles — *preview*
+switches it off to spare the camera process). Cluster radius, mirror and
+preview are pushed back to Python live.
+
+**`/hive/mix`** ([server/mix.ts](server/mix.ts)) relates the two crowds:
+distance between the swarm's and the crowd's centroids, fraction of bees inside
+a group, whether the queen is among people, how much of the crowd a bee is
+touching, whether swarm and crowd drift the same way, and the bees/people
+balance. Both pictures are 0..1 across, so no matching is needed.
+
+For REAPER: add the laptop as an OSC target; *Options → Preferences →
+Control/OSC/Web → Add OSC*, receive only, that port; *Param → Learn* on a plugin
+parameter while moving in front of the camera. Everything is in
+[docs/OSC.md](docs/OSC.md). A Steam Controller as meta-modulator (from the
+original idea) can hook into the same settings later.
 
 ## The wall (`/wall`) and the queen
 
@@ -169,6 +237,10 @@ shared/osc-schema.ts the OSC protocol as data → docs/OSC.md (npm run docs:osc)
 server/condition.ts  per-device One-Euro smoothing, adaptive zero (rel), activity, turn
 server/queen.ts      who the queen is when nobody said: the phone that moved most
 server/wall.ts       the wall's bee positions, relayed to the phones' maps on their own link
+server/global.ts     /hive/global — swarm meta-parameters (correlation, phase, tempo, spectrum, entropy …)
+server/vision.ts     the camera process's frames: validation, crowd motion, relay to OSC / feed / wall / dashboard
+server/mix.ts        /hive/mix — bees ⇄ camera
+vision/              Python: hive_vision.py (YOLO11n-pose, tracking, clustering) · start.sh · requirements.txt
 server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
 start.sh             the one command
 client/src/          phone app (main, sensors, transport, swarm-map, i18n EN/DE/JA) · wall (wall, visuals/bees) · dashboard (monitor, tones) · theme.css

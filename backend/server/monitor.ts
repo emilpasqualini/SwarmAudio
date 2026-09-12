@@ -14,6 +14,7 @@ import type { Feed } from './feed';
 import type { SettingsController } from './settings';
 import type { Global } from './global';
 import type { VisionIn } from './vision';
+import type { Mix } from './mix';
 import type { MonitorHello, MonitorState } from '../shared/types';
 
 export class Monitor {
@@ -30,6 +31,7 @@ export class Monitor {
     private readonly settings: SettingsController,
     private readonly global: Global,
     private readonly vision: VisionIn,
+    private readonly mix: Mix,
     private readonly hz: number,
   ) {
     this.wss.on('connection', (socket) => {
@@ -76,6 +78,7 @@ export class Monitor {
       swarm: this.swarm.latest,
       global: this.global.latest,
       vision: this.vision.status(),
+      mix: this.mix.latest,
       settings: this.settings.current,
     };
     return JSON.stringify(state);
