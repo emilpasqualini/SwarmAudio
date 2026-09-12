@@ -14,7 +14,7 @@
 import './theme.css';
 import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
-import { lang, setLang, t } from './i18n';
+import { LANG_TAG, lang, setLang, t } from './i18n';
 import type { Lang } from './i18n';
 import { checkSupport, detectPlatform, keepAwake, releaseWake, requestMotionPermission, startMotion } from './sensors';
 import type { MotionSample, MotionStream } from './sensors';
@@ -173,8 +173,8 @@ function setJoining(on: boolean): void {
 
 function header(): HTMLElement {
   const toggle = el('div', { class: 'segmented', role: 'group', 'aria-label': 'language' },
-    ...(['en', 'de'] as Lang[]).map((l) => {
-      const b = el('button', { class: lang() === l ? 'on' : '', text: l.toUpperCase() });
+    ...(['en', 'de', 'ja'] as Lang[]).map((l) => {
+      const b = el('button', { class: lang() === l ? 'on' : '', text: l === 'ja' ? '日本語' : l.toUpperCase(), lang: LANG_TAG[l] });
       b.onclick = () => { setLang(l); render(); };
       return b;
     }),
@@ -270,7 +270,7 @@ function errorView(): HTMLElement {
 }
 
 function render(): void {
-  document.documentElement.lang = lang() === 'de' ? 'de-AT' : 'en-GB';
+  document.documentElement.lang = LANG_TAG[lang()];
   const body = state.view === 'join' ? joinView() : state.view === 'streaming' ? streamingView() : errorView();
   root.replaceChildren(el('main', { class: 'stack' }, header(), body, el('div', { class: 'credit', text: t('credit') })));
 }

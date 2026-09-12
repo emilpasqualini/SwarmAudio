@@ -2,10 +2,17 @@
 //  i18n.ts
 //  HIVE (client)
 //
-//  Two languages, one object each. The toggle is remembered per phone.
+//  Three languages, one object each. English is the default; the toggle is
+//  remembered per phone. The Japanese strings use the polite です/ます register
+//  and the exact labels of the iOS and Chrome settings they point at (checked
+//  against Apple's and Google's Japanese UI: 「モーションと画面の向きのアクセス」,
+//  「サイトの設定」→「モーションセンサー」, 「詳細を表示」→「このWebサイトを閲覧」).
 //
 
-export type Lang = 'en' | 'de';
+export type Lang = 'en' | 'de' | 'ja';
+
+/** BCP 47 tag for the <html lang> attribute — the font fallback keys off it. */
+export const LANG_TAG: Record<Lang, string> = { en: 'en-GB', de: 'de-AT', ja: 'ja' };
 
 const strings = {
   en: {
@@ -62,17 +69,44 @@ const strings = {
     retry: 'Nochmal versuchen',
     credit: 'HIVE · Music & AI Hackathon 2026',
   },
+  ja: {
+    tagline: 'スウォーム・オーディオ。あなたのスマートフォンが、群れの中のひとつの声になります。傾きと動きが音に変わります。',
+    join: '群れに参加する',
+    joining: '参加しています…',
+    leave: '退出する',
+    yourName: 'お名前（任意）',
+    youAre: 'あなたは',
+    streaming: '送信中',
+    connecting: '接続しています…',
+    reconnecting: '再接続しています…',
+    disconnected: '切断されました',
+    transport: '接続',
+    rate: 'レート',
+    keepOpen: 'このページを開いたまま、画面をオンにしておいてください。動いたり、傾けたり、回したりしてみてください。',
+    acc: '傾き／重力 — 加速度センサー、m/s²',
+    gyro: '回転速度 — ジャイロセンサー、°/s',
+    sent: '送信',
+    dropped: '破棄',
+    invert: '向きが逆に感じられる場合は、軸を反転してください',
+    errInsecure: 'このページはHTTPで開かれています。スマートフォンのモーションセンサーはHTTPS経由でのみ利用できます。QRコードをもう一度読み取り、アドレスが https:// で始まっていることをご確認ください。',
+    errUnsupported: 'このブラウザではモーションセンサーを利用できません（DeviceMotionEvent非対応）。iPhoneではSafari、AndroidではChromeをお試しください。',
+    errDenied: 'モーションセンサーへのアクセスが許可されませんでした。iPhoneの場合：ページを再読み込みして「許可」をタップするか、「設定」→「Safari」→「モーションと画面の向きのアクセス」をご確認ください。Androidの場合：Chromeの「サイトの設定」→「モーションセンサー」をご確認ください。',
+    errNoData: 'センサーデータが届いていません。パソコンでご覧になっていませんか？モーションセンサーはスマートフォンとタブレットにのみ搭載されています。',
+    errServer: 'サーバーに接続できません。HIVEを実行しているMacと同じWi-Fiに接続していますか？',
+    retry: 'もう一度試す',
+    credit: 'HIVE · Music & AI Hackathon 2026',
+  },
 } as const;
 
 export type Key = keyof typeof strings.en;
 
-let current: Lang = (localStorage.getItem('hive.lang') as Lang | null)
-  ?? (navigator.language.toLowerCase().startsWith('de') ? 'de' : 'en');
+const stored = localStorage.getItem('hive.lang');
+let current: Lang = stored === 'de' || stored === 'ja' ? stored : 'en';
 
 export const lang = (): Lang => current;
 export const t = (key: Key): string => strings[current][key];
 export function setLang(l: Lang): void {
   current = l;
   localStorage.setItem('hive.lang', l);
-  document.documentElement.lang = l === 'de' ? 'de-AT' : 'en-GB';
+  document.documentElement.lang = LANG_TAG[l];
 }

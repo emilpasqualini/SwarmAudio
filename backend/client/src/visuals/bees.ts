@@ -14,10 +14,11 @@
 //  how the phone sits bend their paths differently. Same input, same path,
 //  always: the model is deterministic.
 //
-//  The edge is soft. Beyond a comfort zone a bee is steered back toward the
-//  room's centre, harder the farther out it is, so it curves back rather than
-//  hitting a wall; bees also keep a little distance from each other, so the
-//  swarm spreads over the whole wall instead of piling up. New bees appear
+//  The edge is soft. Inside a margin a bee is nudged back toward the room and
+//  gently turned that way, harder the farther out it is, so it drifts back
+//  rather than hitting a wall — and a bee in a corner is pushed out of it
+//  whatever way it faces. Bees also keep a little distance from each other,
+//  so the swarm spreads over the whole wall instead of piling up. New bees appear
 //  away from the edge and as far from everyone else as possible, and all bees
 //  shrink as the swarm grows.
 //
@@ -43,9 +44,11 @@ const SPEED = 0.16;               // world units / s at full activity
 const SPEED_TAU = 0.4;            // how quickly speed follows activity
 const STEER_TILT = 2.2;           // rad/s of heading change at full sideways tilt
 const STEER_TURN = 1.0;           // bee heading per phone rotation about the vertical (1 = one to one)
-const COMFORT = 0.10;             // margin (in units of the shorter side) inside which steering home begins
-const EDGE = 0.035;               // hard margin — never crossed
-const SEPARATION = 0.11;          // world distance under which bees push each other apart
+const COMFORT = 0.09;             // margin (in units of the shorter side) inside which the edge pushes back
+const EDGE_PUSH = 0.14;           // world units / s of push at the very edge (SPEED is 0.16)
+const EDGE_STEER = 2.5;           // rad/s of turning back toward the room at the very edge
+const EDGE = 0.03;                // hard margin — never crossed
+const SEPARATION = 0.09;          // world distance under which bees push each other apart
 const FULL_SIZE_UP_TO = 6;        // bees keep their full size up to this many; then they shrink
 const TRAIL = 70;                 // frames of trail
 const QUEEN_SCALE = 1.7;
@@ -183,14 +186,19 @@ export class Bees implements Visual {
 
       // --- steering -----------------------------------------------------------
       // The phone's own rotation about the vertical turns the bee one to one;
-      // sideways tilt bends the path; and the closer to the edge, the harder
-      // the bee is turned back toward the middle.
+      // sideways tilt bends the path. Each edge, on its own, pushes the bee
+      // back inward and turns it a little that way — per axis, so a corner
+      // pushes diagonally out and the bee cannot get wedged facing the wall.
       let dHeading = b.turn * (Math.PI / 180) * STEER_TURN + b.tiltX * STEER_TILT;
-      const toCentre = Math.atan2(0.5 - b.y, w / 2 - b.x);
-      const edgeDist = Math.min(b.x, w - b.x, b.y, 1 - b.y);
-      if (edgeDist < COMFORT) {
-        const out = 1 - edgeDist / COMFORT;              // 0 at the comfort line, 1 at the edge
-        dHeading += wrapAngle(toCentre - b.heading) * out * out * 8;
+      const outL = Math.max(0, 1 - b.x / COMFORT), outR = Math.max(0, 1 - (w - b.x) / COMFORT);
+      const outT = Math.max(0, 1 - b.y / COMFORT), outB = Math.max(0, 1 - (1 - b.y) / COMFORT);
+      const pushX = outL * outL - outR * outR, pushY = outT * outT - outB * outB;
+      if (pushX !== 0 || pushY !== 0) {
+        b.x += pushX * EDGE_PUSH * dt;
+        b.y += pushY * EDGE_PUSH * dt;
+        const inward = Math.atan2(pushY, pushX);
+        const out = Math.min(1, Math.hypot(pushX, pushY));
+        dHeading += wrapAngle(inward - b.heading) * out * EDGE_STEER;
       }
       // Neighbours: turn a little away from anyone too close, and never overlap.
       for (const o of all) {
@@ -199,7 +207,7 @@ export class Bees implements Visual {
         if (dist < 1e-4 || dist > SEPARATION) continue;
         const away = Math.atan2(dy, dx);
         const closeness = 1 - dist / SEPARATION;
-        dHeading += wrapAngle(away - b.heading) * closeness * 1.5;
+        dHeading += wrapAngle(away - b.heading) * closeness * 0.8;
         const minDist = rWorld + r0 * sizeOf(o) * 2 / height;
         const push = Math.max(0, minDist - dist) * 0.5;   // overlap only
         b.x += (dx / dist) * push; b.y += (dy / dist) * push;
@@ -207,9 +215,12 @@ export class Bees implements Visual {
       b.heading = wrapAngle(b.heading + dHeading * dt);
 
       // --- speed and wings --------------------------------------------------------
-      // Activity drives both; tilting forward hurries, tilting back holds.
+      // Activity drives both, and so does a held tilt — a slow, deliberate lean
+      // moves the bee even when nothing shakes. Tilting forward hurries,
+      // tilting back holds.
       const resting = b.idle > IDLE_AFTER;
-      const target = resting ? 0 : SPEED * Math.min(1, b.activity * 1.4) * clamp(1 + 0.6 * b.tiltY, 0.3, 1.6);
+      const drive = Math.max(Math.min(1, b.activity * 1.4), Math.min(1, Math.hypot(b.tiltX, b.tiltY)));
+      const target = resting ? 0 : SPEED * drive * clamp(1 + 0.6 * b.tiltY, 0.3, 1.6);
       b.speed += (target - b.speed) * lerpFactor(SPEED_TAU, dt);
       b.x += Math.cos(b.heading) * b.speed * dt;
       b.y += Math.sin(b.heading) * b.speed * dt;
@@ -224,7 +235,7 @@ export class Bees implements Visual {
         b.y += (0.5 - b.y) * aH;
       }
 
-      // safety net — the steering should have turned the bee long before
+      // safety net — the edge push should have kept the bee off it long before
       b.x = clamp(b.x, EDGE + rWorld, w - EDGE - rWorld);
       b.y = clamp(b.y, EDGE + rWorld, 1 - EDGE - rWorld);
 
