@@ -129,8 +129,8 @@ export const DEFAULT_SETTINGS: Settings = {
   filterBeta: 0.3,
   queenUid: '',
   queenAfter: 20,
-  wifiSsid: '',
-  wifiPassword: '',
+  wifiSsid: 'Emilio Algieba',      // Emil's iPhone hotspot — the default network at the venue
+  wifiPassword: '4zs83ffnac5jy',
   wifiHotspot: true,
 };
 
