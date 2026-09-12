@@ -26,8 +26,11 @@ import { encodeBundle, encodeMessage } from './osc-encode';
 import type { Targets } from './targets';
 import type { DeviceInfo, Sample, SwarmFeatures } from '../shared/types';
 
+export interface OscFlags { perSample: boolean; mag: boolean; swarm: boolean }
+
 export class OscOut {
   private readonly socket: Socket;
+  flags: OscFlags = { perSample: true, mag: true, swarm: true };
 
   constructor(private readonly targets: Targets) {
     this.socket = createSocket('udp4');
@@ -37,14 +40,16 @@ export class OscOut {
   }
 
   sample(s: Sample): void {
+    if (!this.flags.perSample && !this.flags.mag) return;
     const [ax, ay, az] = s.acc;
     const [gx, gy, gz] = s.gyro;
     const base = `/hive/dev/${s.slot}`;
-    this.send(encodeBundle([
-      encodeMessage(`${base}/acc`, [ax, ay, az]),
-      encodeMessage(`${base}/gyro`, [gx, gy, gz]),
-      encodeMessage(`${base}/mag`, [Math.hypot(ax, ay, az), Math.hypot(gx, gy, gz)]),
-    ]));
+    const parts: Buffer[] = [];
+    if (this.flags.perSample) {
+      parts.push(encodeMessage(`${base}/acc`, [ax, ay, az]), encodeMessage(`${base}/gyro`, [gx, gy, gz]));
+    }
+    if (this.flags.mag) parts.push(encodeMessage(`${base}/mag`, [Math.hypot(ax, ay, az), Math.hypot(gx, gy, gz)]));
+    this.send(encodeBundle(parts));
   }
 
   join(d: DeviceInfo, count: number): void {
@@ -62,6 +67,7 @@ export class OscOut {
   }
 
   swarm(f: SwarmFeatures): void {
+    if (!this.flags.swarm) return;
     this.send(encodeBundle([
       encodeMessage('/hive/swarm/count', [{ i: f.count }]),
       encodeMessage('/hive/swarm/energy', [f.energy]),

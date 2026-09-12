@@ -3,14 +3,21 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "backend", "run", "dev"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "backend/start.sh",
+        "--no-open"
+      ],
       "port": 8080
     },
     {
-      "name": "backend-sim",
-      "runtimeExecutable": "env",
-      "runtimeArgs": ["HIVE_SIMULATE=3", "npx", "--prefix", "backend", "tsx", "backend/server/index.ts"],
+      "name": "backend-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "backend/start.sh",
+        "--dev",
+        "--no-open"
+      ],
       "port": 8080
     }
   ]

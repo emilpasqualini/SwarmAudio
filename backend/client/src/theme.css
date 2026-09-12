@@ -173,7 +173,7 @@ button, select, input {
 .pill.big { padding: 18px 40px; font-size: 1.15rem; width: 100%; }
 .pill.on { background: var(--accent); color: #000; border-color: var(--accent); }
 
-input[type="text"] {
+input[type="text"], input[type="number"] {
   width: 100%;
   background: var(--surface-raised);
   border: 1px solid var(--hairline);
@@ -181,7 +181,13 @@ input[type="text"] {
   padding: 11px 13px;
   outline: none;
 }
-input[type="text"]:focus { border-color: var(--accent); }
+input[type="text"]:focus, input[type="number"]:focus { border-color: var(--accent); }
+input[type="number"] { width: 6.5em; padding: 7px 10px; font-family: var(--mono); font-size: 0.9rem; -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
+
+.settings { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+.settings .k { font-size: 0.85rem; color: var(--text-dim); }
+.settings .hint { font-size: 0.75rem; color: var(--text-faint); margin-left: 8px; }
 
 /* The language switch: two quiet pills fused into one control. */
 .segmented { display: inline-flex; border: 1px solid var(--hairline); border-radius: var(--pill); overflow: hidden; }
