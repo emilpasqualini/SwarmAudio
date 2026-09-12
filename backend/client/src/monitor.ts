@@ -141,7 +141,7 @@ function buildProtocolCard(): void {
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
 type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter';
-type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode';
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const textInputs = new Map<TextKey, HTMLInputElement>();
@@ -199,6 +199,8 @@ function buildSettingsCard(h: MonitorHello): void {
       ...boolSetting('wifiHotspot', 'iphone hotspot', 'on: the phones join an iPhone personal hotspot (name + password are under settings → personal hotspot on that iPhone; turn on "maximise compatibility"; that iPhone itself cannot join). off: any other wi-fi'),
       ...textSetting('wifiSsid', 'wi-fi name', 'shown as a QR code here and on the wall; macOS hides the SSID from apps, so type it', "Emil's iPhone"),
       ...textSetting('wifiPassword', 'wi-fi password', 'empty = open network'),
+      ...boolSetting('wallWifiCode', 'wall: wi-fi code', 'show the wi-fi QR code on the wall — off once everyone is on the network'),
+      ...boolSetting('wallJoinCode', 'wall: join code', 'show the join QR code on the wall — off once everyone is in, the bees get the whole wall'),
       ...boolSetting('oscWide', 'osc /hive/sample', 'the wide message: everything per sample, fixed order — see protocol card'),
       ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
       ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
@@ -263,9 +265,11 @@ function buildPage(): void {
 
   drawAddresses();
   refs.wifiCard.replaceChildren(
-    el('div', { class: 'section-label', text: 'scan to join the wi-fi first' }),
-    refs.wifiQr,
-    refs.wifiName,
+    el('details', {},
+      el('summary', { class: 'section-label', text: 'wi-fi QR code (as on the wall)' }),
+      refs.wifiQr,
+      refs.wifiName,
+    ),
   );
 
   // Add-target form.

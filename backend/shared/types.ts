@@ -113,6 +113,9 @@ export interface Settings {
   wifiPassword: string;
   /** true: the network is an iPhone personal hotspot (hints and wording follow); false: any other Wi-Fi. */
   wifiHotspot: boolean;
+  /** Show the wi-fi / join QR codes on the wall. Switch them off once everyone is in. */
+  wallWifiCode: boolean;
+  wallJoinCode: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -130,8 +133,10 @@ export const DEFAULT_SETTINGS: Settings = {
   queenUid: '',
   queenAfter: 20,
   wifiSsid: 'Emilio Algieba',      // Emil's iPhone hotspot — the default network at the venue
-  wifiPassword: '4zs83ffnac5jy',
+  wifiPassword: 'jointhehive',
   wifiHotspot: true,
+  wallWifiCode: true,
+  wallJoinCode: true,
 };
 
 export const SETTINGS_LIMITS = {

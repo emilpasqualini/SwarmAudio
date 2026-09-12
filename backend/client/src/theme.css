@@ -340,13 +340,14 @@ body.wall #app > * { transition: opacity 0.4s ease; }
 
 .wall-title { font-size: 3.2rem; line-height: 1; }
 .wall-count { font-family: var(--serif); font-size: 4rem; line-height: 1; color: var(--accent); }
-.wall-join { width: 300px; background: rgba(14, 14, 16, 0.85); backdrop-filter: blur(8px); }
-.wall-join .qr canvas { max-width: 260px; padding: 10px; }
+.wall-join { width: 240px; background: rgba(14, 14, 16, 0.85); backdrop-filter: blur(8px); }
+.wall-join .qr canvas { max-width: 200px; padding: 8px; }
 .wall-join .url { margin-top: 8px; font-size: 0.85rem; }
 /* With a wi-fi card the join card moves right to make room: 1 wi-fi, 2 join. */
 .wall-wifi { z-index: 3; }
-body.has-wifi .wall-join:not(.wall-wifi) { left: 340px; }
-.wall-steps { margin-top: 6px; font-size: 0.78rem; }
+.wall-wifi .url .k { color: var(--text-faint); font-family: var(--body); }
+body.has-wifi .wall-join:not(.wall-wifi) { left: 270px; }
+.wall-steps { margin-top: 6px; font-size: 0.72rem; }
 .wall-swarm { display: flex; gap: 22px; }
 .wall-stat .v { display: block; font-family: var(--serif); font-size: 1.8rem; line-height: 1; }
 .wall-stat .k { font-size: 0.72rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-faint); }
