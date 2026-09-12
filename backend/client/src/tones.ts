@@ -97,8 +97,10 @@ export class Tones {
     // either way; at rest the note returns to its root.
     const tilt = Math.max(-1, Math.min(1, ry / (G / 2)));
     v.osc.frequency.setTargetAtTime(v.base * 2 ** (tilt * 7 / 12), now, 0.03);
-    // Activity opens the tone: resting phones hum quietly, moving ones sing.
-    v.gain.gain.setTargetAtTime(0.08 + 0.5 * activity, now, 0.04);
+    // Activity or a held tilt opens the tone: resting phones hum, moving or
+    // leaning ones sing.
+    const lean = Math.min(1, Math.hypot(rel[0], rel[1], rel[2]) / (G / 2));
+    v.gain.gain.setTargetAtTime(0.15 + 0.6 * Math.max(activity, lean), now, 0.04);
     v.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, rx / (G / 2))), now, 0.05);
   }
 }

@@ -20,8 +20,10 @@ export interface Frame {
   time: number;
   /** CSS colour for a slot. */
   colour: (slot: number) => string;
-  /** Slot of the queen (dashboard setting), 0 = none. */
-  queen: number;
+  /** uid of the queen (server setting), '' = none. */
+  queen: string;
+  /** Tell the server a bee has taken the crown. */
+  crown: (uid: string) => void;
 }
 
 export interface Visual {
