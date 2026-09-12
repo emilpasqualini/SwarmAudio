@@ -47,7 +47,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n);
     }
-    for (const key of ['zeroIdleAfter', 'zeroTau'] as const) {
+    for (const key of ['zeroIdleAfter', 'zeroTau', 'filterMinCutoff', 'filterBeta'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];
@@ -71,6 +71,8 @@ export class SettingsController {
     this.osc.flags = { wide: s.oscWide, perField: s.oscPerField, roster: s.oscRoster, swarm: s.oscSwarm };
     this.registry.condition.idleAfter = s.zeroIdleAfter;
     this.registry.condition.baselineTau = s.zeroTau;
+    this.registry.condition.minCutoff = s.filterMinCutoff;
+    this.registry.condition.beta = s.filterBeta;
     if (s.simulate !== previous.simulate) {
       this.stopSimulation?.();
       this.stopSimulation = s.simulate > 0 ? startSimulation(this.registry, s.simulate) : null;

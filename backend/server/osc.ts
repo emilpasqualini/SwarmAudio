@@ -35,6 +35,7 @@ export function sampleArgs(s: Sample, t: number): OscArg[] {
     gx, gy, gz,
     s.activity, s.idle,
     Math.hypot(ax, ay, az), Math.hypot(rx, ry, rz), Math.hypot(gx, gy, gz),
+    s.turn,
   ];
 }
 
@@ -81,6 +82,7 @@ export class OscOut {
         encodeMessage(`${base}/gyro`, [gx, gy, gz]),
         encodeMessage(`${base}/activity`, [s.activity]),
         encodeMessage(`${base}/mag`, [accMag, relMag, gyroMag]),
+        encodeMessage(`${base}/turn`, [s.turn]),
       );
     }
     this.send(encodeBundle(parts));

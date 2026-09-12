@@ -30,12 +30,14 @@ export interface Sample {
   acc: [number, number, number];
   /** Rotation rate, °/s, around x (beta), y (gamma), z (alpha). */
   gyro: [number, number, number];
-  /** Smoothed acceleration relative to the device's adaptive zero (m/s²); settles to 0 at rest. */
+  /** One-Euro-smoothed acceleration relative to the device's adaptive zero (m/s²); settles to 0 at rest. */
   rel: [number, number, number];
   /** 0..1, how much the phone is turning or being jolted right now. */
   activity: number;
   /** Seconds the phone has been at rest. */
   idle: number;
+  /** Rotation rate about the vertical (gravity) axis, °/s; positive = counter-clockwise seen from above. */
+  turn: number;
 }
 
 export type Transport = 'ws' | 'post';
@@ -98,6 +100,10 @@ export interface Settings {
   zeroIdleAfter: number;
   /** Seconds — time constant of the zero's slide. */
   zeroTau: number;
+  /** One-Euro filter: cutoff at rest, Hz. */
+  filterMinCutoff: number;
+  /** One-Euro filter: how much the cutoff rises with speed of change. */
+  filterBeta: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -110,6 +116,8 @@ export const DEFAULT_SETTINGS: Settings = {
   oscSwarm: true,
   zeroIdleAfter: 1.2,
   zeroTau: 2.5,
+  filterMinCutoff: 1.0,
+  filterBeta: 0.3,
 };
 
 export const SETTINGS_LIMITS = {
@@ -118,6 +126,8 @@ export const SETTINGS_LIMITS = {
   simulate: { min: 0, max: 50 },
   zeroIdleAfter: { min: 0, max: 30 },
   zeroTau: { min: 0.1, max: 60 },
+  filterMinCutoff: { min: 0.05, max: 30 },
+  filterBeta: { min: 0, max: 5 },
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------
@@ -149,7 +159,7 @@ export type MonitorMessage = MonitorHello | MonitorState;
 // --- raw feed (server → teammates' code, JSON) --------------------------------
 
 export type FeedMessage =
-  | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number }
+  | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number; turn: number }
   | { type: 'join'; slot: number; uid: string; platform: Platform; name: string }
   | { type: 'leave'; slot: number; uid: string }
   | ({ type: 'swarm' } & SwarmFeatures);

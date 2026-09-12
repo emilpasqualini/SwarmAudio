@@ -135,7 +135,7 @@ function buildProtocolCard(): void {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta';
 type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
@@ -173,10 +173,12 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
       ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
       ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
+      ...numberSetting('filterMinCutoff', 'filter: min cutoff', 'Hz — One-Euro cutoff at rest; lower = calmer rel when still', 0.05),
+      ...numberSetting('filterBeta', 'filter: beta', 'how much the cutoff rises with speed of change; higher = snappier gestures', 0.05),
       ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
       ...numberSetting('zeroTau', 'zero: slide time', 's — time constant of the zero sliding over; rel → 0 at rest', 0.1),
       ...boolSetting('oscWide', 'osc /hive/sample', 'the wide message: everything per sample, fixed order — see protocol card'),
-      ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag'),
+      ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
       ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
       ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm (wide) + /hive/swarm/count · energy · motion · sync'),
       el('span', { class: 'k', text: 'ports' }),

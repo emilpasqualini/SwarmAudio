@@ -56,14 +56,23 @@ individual axes on their phone if the direction feels wrong to them.
 
 ### Processed signals
 
-- **rel** — acceleration smoothed (~80 ms) and taken relative to an *adaptive
-  zero*: once a phone has been at rest for \`zero: rest before\` seconds
-  (dashboard, default 1.2 s) the zero slides toward the resting value with
-  time constant \`zero: slide time\` (default 2.5 s). So \`rel\` is 0 whenever
-  someone holds still — at any angle — and only *change* produces signal.
+- **rel** — acceleration smoothed with a *One-Euro filter* and taken relative
+  to an *adaptive zero*. The One-Euro filter (Casiez et al. 2012) is a low-pass
+  whose cutoff rises with the speed of change: at rest it sits at
+  \`filter: min cutoff\` (dashboard, default 1 Hz) and the jitter is gone; the
+  faster the signal moves, the higher the cutoff (\`filter: beta\`, default
+  0.3 per m/s² per s), so quick gestures arrive without lag. The zero: once a
+  phone has been at rest for \`zero: rest before\` seconds (default 1.2 s) it
+  slides toward the resting value with time constant \`zero: slide time\`
+  (default 2.5 s). So \`rel\` is 0 whenever someone holds still — at any
+  angle — and only *change* produces signal.
 - **activity** — max of turning rate / 150 °/s and acceleration change / 6
   m/s², smoothed ~250 ms, clamped 0..1.
 - **idle** — seconds since activity last dropped below 0.06.
+- **turn** (v2) — the gyroscope projected onto the smoothed gravity direction:
+  the rotation rate about the room's vertical, whether the phone lies flat
+  (then it equals \`gyro_z\`), stands in a pocket, or is held at an angle.
+  Turning on the spot is the same signal for everyone.
 
 ## \`/hive/swarm\` — the whole swarm (${SWARM_FIELDS.length} arguments)
 

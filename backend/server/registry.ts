@@ -36,7 +36,7 @@ export class Registry {
   private sweeper: NodeJS.Timeout | null = null;
 
   /** Shared with the settings controller, which edits it in place. */
-  readonly condition: ConditionParams = { idleAfter: 1.2, baselineTau: 2.5 };
+  readonly condition: ConditionParams = { idleAfter: 1.2, baselineTau: 2.5, minCutoff: 1.0, beta: 0.3 };
 
   constructor(private timeoutMs: number) {}
 
@@ -95,6 +95,7 @@ export class Registry {
         rel: c.rel,
         activity: c.activity,
         idle: c.idle,
+        turn: c.turn,
       };
       device.last = sample;
       for (const fn of this.listeners.sample) fn(sample, device);
