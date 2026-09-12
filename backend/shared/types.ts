@@ -269,6 +269,8 @@ export interface Settings {
   /** Camera: bees are drawn toward crowds on the wall, with this strength. */
   camCoupling: boolean;
   camStrength: number;
+  /** Camera: the crowd's motion gives the animals a gentle shove along the flow — noticeable, not much. */
+  camPush: boolean;
   /** Camera: cluster radius, fraction of the frame width. */
   camEps: number;
   /** Camera: mirror x so the picture behaves like a mirror. */
@@ -316,6 +318,7 @@ export const DEFAULT_SETTINGS: Settings = {
   oscCamPersons: true,
   camCoupling: false,
   camStrength: 0.5,
+  camPush: false,
   camEps: 0.12,
   camMirror: true,
   camPreview: true,

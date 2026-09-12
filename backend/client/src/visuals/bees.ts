@@ -67,6 +67,7 @@ const EDGE_STEER = 2.5;           // rad/s of turning back toward the room at th
 const EDGE = 0.03;                // hard margin — never crossed
 const SEPARATION = 0.05;          // world distance under which bees nudge each other apart — small, collisions are the point
 const CROWN_COOLDOWN = 2.5;       // seconds after a crowning before the crown can move again
+const PUSH = 0.5;                 // how much of the crowd's flow (frame widths/s) an animal picks up when pushed
 const FULL_SIZE_UP_TO = 6;        // bees keep their full size up to this many; then they shrink
 const TRAIL = 70;                 // frames of trail
 const QUEEN_SCALE = 1.7;
@@ -304,7 +305,7 @@ export class Bees implements Visual {
     return best;
   }
 
-  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling, species, queenHidden }: Frame): void {
+  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling, species, queenHidden, push }: Frame): void {
     const sheep = species === 'sheep';
     this.aspect = width / height;
     const w = this.aspect;
@@ -319,6 +320,7 @@ export class Bees implements Visual {
       ? SEPARATION * (fieldMode ? 1.5 - this.flowCoherence : 0.5 + this.spread * 1.5)
       : SEPARATION;
     const beatLocked = couple > 0 && fieldMode && this.beatStrength > 0.4 && this.beat > 0;
+    const shove = push && running && time - this.camSeen < SHADOW_TTL && this.flow.length > 0;
     if (round !== this.round) {
       // Reset: everyone takes off again from a fresh spot.
       this.round = round;
@@ -415,6 +417,16 @@ export class Bees implements Visual {
       // a sheep that comes to rest decides — by lot — whether to lie down or graze
       if (resting && b.idleAnim === null) { b.idleAnim = Math.random() < 0.5 ? 'lie' : 'graze'; b.restingSince = time; }
       if (!resting && b.speed > 0.02) b.idleAnim = null;
+
+      if (shove) {
+        // the crowd's motion under the animal gives it a nudge — a draught, not a current
+        const ci = Math.min(CAM_GRID.w - 1, Math.floor(b.x / w * CAM_GRID.w)), cj = Math.min(CAM_GRID.h - 1, Math.floor(b.y * CAM_GRID.h));
+        const cell = this.flow[cj * CAM_GRID.w + ci];
+        if (cell && cell[2] > 0.05) {
+          b.x += cell[0] * w * PUSH * cell[2] * dt;
+          b.y += cell[1] * PUSH * cell[2] * dt;
+        }
+      }
 
       if (resting && running) {
         // Drift toward a resting spot of one's own on a ring around the middle
@@ -549,15 +561,22 @@ export class Bees implements Visual {
           }
         }
       }
+      // the people the model still finds (front rows) and their groups, on top of the field
+      this.drawPeople(ctx, height, dt, time, 0.6);
       return;
     }
+    this.drawPeople(ctx, height, dt, time, 1);
+  }
+
+  /** Shadows for the people the camera sees, rings for their groups; `scale` shrinks them in field mode. */
+  private drawPeople(ctx: CanvasRenderingContext2D, height: number, dt: number, time: number, scale: number): void {
     const k = lerpFactor(SHADOW_TAU, dt);
     for (const [id, sh] of this.shadows) {
       const age = time - sh.seen;
       if (age > SHADOW_TTL) { this.shadows.delete(id); continue; }
       sh.x += (sh.tx - sh.x) * k; sh.y += (sh.ty - sh.y) * k;
       const px = sh.x * height, py = sh.y * height;
-      const r = height * (0.05 + 0.12 * sh.depth);
+      const r = height * (0.05 + 0.12 * sh.depth) * scale;
       const fade = 1 - Math.max(0, age - 0.3) / (SHADOW_TTL - 0.3);
       const bright = 0.10 + 0.08 * sh.energy + 0.12 * (sh.armsUp / 2);
       const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
@@ -567,14 +586,27 @@ export class Bees implements Visual {
       ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
     }
     if (time - this.camSeen < SHADOW_TTL) {
-      ctx.strokeStyle = 'rgba(242,184,180,0.18)';
+      // groups: a dashed ring, the members joined by faint threads, the size in the middle
       ctx.lineWidth = 1;
-      ctx.setLineDash([6, 8]);
       for (const ring of this.rings) {
         if (ring.n < 2) continue;
-        ctx.beginPath(); ctx.arc(ring.x * height, ring.y * height, Math.max(ring.r, 0.04) * height, 0, Math.PI * 2); ctx.stroke();
+        const cx = ring.x * height, cy = ring.y * height, rr = Math.max(ring.r, 0.04) * height * 1.15;
+        ctx.strokeStyle = 'rgba(242,184,180,0.12)';
+        ctx.setLineDash([]);
+        for (const sh of this.shadows.values()) {
+          const dx = sh.x * height - cx, dy = sh.y * height - cy;
+          if (Math.hypot(dx, dy) <= rr) { ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + dx, cy + dy); ctx.stroke(); }
+        }
+        ctx.strokeStyle = 'rgba(242,184,180,0.28)';
+        ctx.setLineDash([6, 8]);
+        ctx.beginPath(); ctx.arc(cx, cy, rr, time * 0.2, time * 0.2 + Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(242,184,180,0.5)';
+        ctx.font = `${Math.max(11, height * 0.018)}px Bitter, Georgia, serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(ring.n), cx, cy);
       }
-      ctx.setLineDash([]);
     }
   }
 
