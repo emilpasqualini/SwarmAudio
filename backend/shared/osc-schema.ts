@@ -12,7 +12,7 @@
 //  against version 1 keeps working when version 2 adds columns at the end.
 //
 
-export const OSC_SCHEMA_VERSION = 1;
+export const OSC_SCHEMA_VERSION = 2;
 
 export type OscType = 'i' | 'f' | 's';
 
@@ -31,7 +31,7 @@ export const SAMPLE_FIELDS: Field[] = [
   { name: 'acc_x',    type: 'f', unit: 'm/s²', description: 'Raw acceleration including gravity, x (phone right). Flat phone ≈ 0.' },
   { name: 'acc_y',    type: 'f', unit: 'm/s²', description: 'Raw acceleration including gravity, y (phone top). Flat phone ≈ 0.' },
   { name: 'acc_z',    type: 'f', unit: 'm/s²', description: 'Raw acceleration including gravity, z (out of the screen). Flat phone ≈ +9.81 on iOS and Android alike.' },
-  { name: 'rel_x',    type: 'f', unit: 'm/s²', description: 'Smoothed acceleration relative to the adaptive zero, x. Settles to 0 when the phone rests, at any angle.' },
+  { name: 'rel_x',    type: 'f', unit: 'm/s²', description: 'One-Euro-smoothed acceleration relative to the adaptive zero, x. Settles to 0 when the phone rests, at any angle.' },
   { name: 'rel_y',    type: 'f', unit: 'm/s²', description: 'Same, y.' },
   { name: 'rel_z',    type: 'f', unit: 'm/s²', description: 'Same, z.' },
   { name: 'gyro_x',   type: 'f', unit: '°/s',  description: 'Rotation rate about x (pitch).' },
@@ -42,6 +42,8 @@ export const SAMPLE_FIELDS: Field[] = [
   { name: 'acc_mag',  type: 'f', unit: 'm/s²', description: '|acc|. ≈ 9.81 when only gravity acts; deviates when shaken.' },
   { name: 'rel_mag',  type: 'f', unit: 'm/s²', description: '|rel|. How far from the resting position, regardless of direction.' },
   { name: 'gyro_mag', type: 'f', unit: '°/s',  description: '|gyro|. How fast the phone turns, regardless of axis.' },
+  // --- v2 ---
+  { name: 'turn',     type: 'f', unit: '°/s',  description: 'Rotation about the vertical (gravity) axis, however the phone is held: turning around yourself. Positive = counter-clockwise seen from above.' },
 ];
 
 /** `/hive/swarm` — the whole swarm, at the configured swarm rate. */
@@ -76,6 +78,7 @@ export const PER_FIELD_MESSAGES: MessageDoc[] = [
   { address: '/hive/dev/<slot>/gyro',     args: 'f x · f y · f z', when: 'every sample', description: 'Rotation rate.' },
   { address: '/hive/dev/<slot>/activity', args: 'f a',             when: 'every sample', description: '0..1.' },
   { address: '/hive/dev/<slot>/mag',      args: 'f |acc| · f |rel| · f |gyro|', when: 'every sample', description: 'Magnitudes.' },
+  { address: '/hive/dev/<slot>/turn',     args: 'f turn',          when: 'every sample', description: 'Rotation about the vertical, °/s (v2).' },
   { address: '/hive/dev/<slot>/join',     args: 's platform · i slot', when: 'join',    description: 'Slot-addressed twin of /hive/join.' },
   { address: '/hive/dev/<slot>/leave',    args: 'i slot',          when: 'leave',        description: 'Slot-addressed twin of /hive/leave.' },
   { address: '/hive/swarm/count',         args: 'i',               when: 'swarm rate',   description: 'Twin of the count field.' },

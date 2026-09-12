@@ -36,7 +36,9 @@ big enough to scan from across a table.
 | fake phones | 0–50 virtual devices through the real pipeline (also `--sim n`) |
 | swarm rate | Hz of `/hive/swarm/*` |
 | device timeout | ms of silence before a phone is dropped |
-| osc acc + gyro / magnitudes / swarm | switch each message family on or off |
+| filter: min cutoff / beta | One-Euro smoothing of `rel` — rest-state cutoff (Hz) and how fast it opens up on movement |
+| zero: rest before / slide time | when and how quickly the adaptive zero follows a resting phone (`rel` → 0) |
+| osc /hive/sample / per field / roster / swarm | switch each message family on or off |
 | × in the device table | drop a device now |
 | test tones | sonify the swarm on this Mac |
 
@@ -127,7 +129,7 @@ carries it. This is Web Audio in the browser — a check, not the installation.
 ```
 shared/protocol.ts   binary frame: 12-byte header + n × 7 float32   (npm run protocol:test)
 shared/osc-schema.ts the OSC protocol as data → docs/OSC.md (npm run docs:osc) + dashboard card
-server/condition.ts  per-device smoothing, adaptive zero (rel), activity
+server/condition.ts  per-device One-Euro smoothing, adaptive zero (rel), activity, turn
 server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
 start.sh             the one command
 client/src/          phone app (main, sensors, transport, i18n) · dashboard (monitor, tones) · theme.css
