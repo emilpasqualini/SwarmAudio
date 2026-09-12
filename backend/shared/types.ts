@@ -67,6 +67,38 @@ export interface OscTarget {
   error?: string | null;
 }
 
+// --- runtime settings (editable on the dashboard, persisted) -----------------
+
+export interface Settings {
+  /** Rate of /hive/swarm/* messages. */
+  swarmHz: number;
+  /** A device silent for this long has left. */
+  deviceTimeoutMs: number;
+  /** Fake phones; 0 = off. */
+  simulate: number;
+  /** Send /hive/dev/<slot>/acc, /gyro per sample. */
+  oscPerSample: boolean;
+  /** Send /hive/dev/<slot>/mag per sample. */
+  oscMag: boolean;
+  /** Send /hive/swarm/* at swarmHz. */
+  oscSwarm: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  swarmHz: 30,
+  deviceTimeoutMs: 3000,
+  simulate: 0,
+  oscPerSample: true,
+  oscMag: true,
+  oscSwarm: true,
+};
+
+export const SETTINGS_LIMITS = {
+  swarmHz: { min: 1, max: 120 },
+  deviceTimeoutMs: { min: 500, max: 60_000 },
+  simulate: { min: 0, max: 50 },
+} as const;
+
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------
 
 export interface MonitorHello {
@@ -75,6 +107,8 @@ export interface MonitorHello {
   qrUrl: string;
   httpPort: number;
   httpsPort: number;
+  /** Where hive.config.json lives, for the dashboard to say so. */
+  configFile: string;
 }
 
 export interface MonitorState {
@@ -84,6 +118,7 @@ export interface MonitorState {
   targets: OscTarget[];
   feedSubscribers: number;
   swarm: SwarmFeatures;
+  settings: Settings;
 }
 
 export type MonitorMessage = MonitorHello | MonitorState;

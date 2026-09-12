@@ -15,7 +15,8 @@ import QRCode from 'qrcode';
 import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { Tones } from './tones';
-import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget } from '../../shared/types';
+import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
+import { SETTINGS_LIMITS } from '../../shared/types';
 
 const root = document.getElementById('app')!;
 const log = new ActivityLog(document.getElementById('log')!);
@@ -74,7 +75,72 @@ const refs = {
   tbody: el('tbody'),
   tonesButton: el('button', { class: 'pill quiet', text: 'Test tones: off' }),
   volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
+  settingsCard: el('div', { class: 'card stack' }),
 };
+
+// --- settings card: inputs are built once and only refreshed while not focused,
+//     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
+
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate';
+type BoolKey = 'oscPerSample' | 'oscMag' | 'oscSwarm';
+const numInputs = new Map<NumKey, HTMLInputElement>();
+const boolButtons = new Map<BoolKey, HTMLButtonElement>();
+
+async function patchSettings(patch: Partial<Settings>): Promise<void> {
+  const res = await api('PATCH', '/api/settings', patch);
+  if (res.ok) log.step(`settings: ${Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+}
+
+function numberSetting(key: NumKey, label: string, hint: string): HTMLElement[] {
+  const { min, max } = SETTINGS_LIMITS[key];
+  const input = el('input', { type: 'number', min, max, step: 1 });
+  const commit = (): void => {
+    const v = Number(input.value);
+    if (!Number.isFinite(v) || v === state?.settings[key]) return;
+    void patchSettings({ [key]: v });
+  };
+  input.onchange = commit;
+  input.onkeydown = (e) => { if (e.key === 'Enter') { commit(); input.blur(); } };
+  numInputs.set(key, input);
+  return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, input, el('span', { class: 'hint', text: hint }))];
+}
+
+function boolSetting(key: BoolKey, label: string, hint: string): HTMLElement[] {
+  const button = el('button', { class: 'pill small quiet', text: 'off' });
+  button.onclick = () => { void patchSettings({ [key]: !state?.settings[key] }); };
+  boolButtons.set(key, button);
+  return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, button, el('span', { class: 'hint', text: hint }))];
+}
+
+function buildSettingsCard(h: MonitorHello): void {
+  refs.settingsCard.replaceChildren(
+    el('div', { class: 'section-label', text: 'settings' }),
+    el('div', { class: 'settings' },
+      ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
+      ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
+      ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
+      ...boolSetting('oscPerSample', 'osc acc + gyro', '/hive/dev/<n>/acc and /gyro per sample'),
+      ...boolSetting('oscMag', 'osc magnitudes', '/hive/dev/<n>/mag per sample'),
+      ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm/count, energy, motion, sync'),
+      el('span', { class: 'k', text: 'ports' }),
+      el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
+      el('span', { class: 'k', text: 'saved to' }),
+      el('span', { class: 'note url', text: h.configFile }),
+    ),
+  );
+}
+
+function updateSettings(s: Settings): void {
+  for (const [key, input] of numInputs) {
+    if (document.activeElement !== input) input.value = String(s[key]);
+  }
+  for (const [key, button] of boolButtons) {
+    const on = s[key];
+    button.textContent = on ? 'on' : 'off';
+    button.classList.toggle('on', on);
+    button.classList.toggle('quiet', !on);
+  }
+}
 
 function buildPage(): void {
   if (!hello) return;
@@ -103,6 +169,7 @@ function buildPage(): void {
 
   refs.tonesButton.onclick = () => { void toggleTones(); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
+  buildSettingsCard(hello);
 
   root.replaceChildren(el('main', { class: 'wide stack' },
     el('div', { class: 'row between wrap' },
@@ -133,6 +200,7 @@ function buildPage(): void {
           el('div', { class: 'row wrap' }, el('div', { class: 'grow' }, spec), label, add),
           refs.feedInfo,
         ),
+        refs.settingsCard,
         el('div', { class: 'card stack' },
           el('div', { class: 'section-label', text: 'debug sound on this mac' }),
           el('div', { class: 'row wrap' }, refs.tonesButton, el('span', { class: 'note', text: 'volume' }), refs.volume),
@@ -145,7 +213,7 @@ function buildPage(): void {
       el('div', { class: 'table-wrap' }, el('table', {},
         el('thead', {}, el('tr', {},
           el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
-          el('th', { text: 'hz' }), el('th', { text: 'acc x y z · gyro x y z' }), el('th', { text: '|acc|' }), el('th', { text: '|gyro|' }),
+          el('th', { text: 'hz' }), el('th', { text: 'acc x y z · gyro x y z' }), el('th', { text: '|acc|' }), el('th', { text: '|gyro|' }), el('th'),
         )),
         refs.tbody,
       )),
@@ -170,6 +238,7 @@ function updateState(): void {
   refs.feedInfo.textContent = `${state.feedSubscribers} raw feed subscriber${state.feedSubscribers === 1 ? '' : 's'}`;
   renderTargets(state.targets);
   renderDevices(state.devices);
+  updateSettings(state.settings);
 }
 
 function renderTargets(targets: OscTarget[]): void {
@@ -203,6 +272,11 @@ function renderDevices(devices: DeviceInfo[]): void {
         el('td'), el('td'), el('td'), el('td', { class: 'num' }),
         el('td', {}, el('div', { class: 'mini' }, ...bars)),
         el('td', { class: 'num' }), el('td', { class: 'num' }),
+        el('td', {}, (() => {
+          const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
+          kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
+          return kick;
+        })()),
       ];
       const tr = el('tr', {}, ...cells);
       tr.style.setProperty('--slot', slotColour(d.slot));

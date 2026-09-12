@@ -20,13 +20,14 @@ import { lanAddresses } from './lan';
 import { loadOrCreateCertificate } from './cert';
 import { serveStatic, notFound } from './static';
 import { Registry } from './registry';
+import { Store } from './store';
+import { SettingsController } from './settings';
 import { Targets, parseHostPort } from './targets';
 import { OscOut } from './osc';
 import { Swarm } from './swarm';
 import { Feed } from './feed';
 import { Monitor } from './monitor';
 import { createIngest } from './ingest';
-import { startSimulation } from './simulate';
 
 const log = (line: string): void => console.log(`[hive] ${line}`);
 
@@ -40,15 +41,18 @@ const qrUrl = urls[0] ?? `https://localhost:${config.httpsPort}`;
 const credentials = loadOrCreateCertificate(config.certDir, ips);
 if (credentials.regenerated) log(`new self-signed certificate for ${ips.join(', ') || 'localhost'}`);
 
-const registry = new Registry(config.deviceTimeoutMs);
-const targets = new Targets(config.configFile, config.oscTargets);
+const store = new Store(config.configFile);
+if (config.simulate !== null) store.settings.simulate = config.simulate;
+const registry = new Registry(store.settings.deviceTimeoutMs);
+const targets = new Targets(store, config.oscTargets);
 const osc = new OscOut(targets);
-const swarm = new Swarm(registry, config.swarmHz);
+const swarm = new Swarm(registry, store.settings.swarmHz);
+const settings = new SettingsController(store, registry, swarm, osc);
 const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, log);
 const monitor = new Monitor(
-  { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort },
-  registry, targets, swarm, feed, config.monitorHz,
+  { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile },
+  registry, targets, swarm, feed, settings, config.monitorHz,
 );
 
 registry.on('sample', (s) => osc.sample(s));
@@ -81,6 +85,17 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
   if (!pathname.startsWith('/api/')) return false;
   try {
     if (pathname === '/api/health') { json(res, 200, { ok: true, devices: registry.count }); return true; }
+    if (pathname === '/api/settings' && req.method === 'GET') { json(res, 200, settings.current); return true; }
+    if (pathname === '/api/settings' && req.method === 'PATCH') {
+      const error = settings.update((await readJson(req)) as Record<string, unknown>);
+      json(res, error ? 400 : 200, error ? { error } : settings.current); return true;
+    }
+    if (pathname === '/api/devices/kick' && req.method === 'POST') {
+      const { slot } = (await readJson(req)) as { slot?: number };
+      const d = registry.list().find((x) => x.slot === Number(slot));
+      if (d) registry.remove(d.id);
+      json(res, d ? 200 : 404, d ? {} : { error: 'no such slot' }); return true;
+    }
     if (pathname === '/api/targets' && req.method === 'GET') { json(res, 200, targets.all()); return true; }
     if (pathname === '/api/targets' && req.method === 'POST') {
       const body = (await readJson(req)) as { host?: string; port?: number | string; spec?: string; label?: string };
@@ -180,8 +195,8 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     console.log('');
     console.log(await QRCode.toString(qrUrl, { type: 'terminal', small: true }));
 
-    const simCount = Number(process.env.HIVE_SIMULATE ?? 0);
-    if (simCount > 0) { startSimulation(registry, simCount); log(`simulating ${simCount} device(s)`); }
+    settings.applyAll();
+    if (store.settings.simulate > 0) log(`simulating ${store.settings.simulate} device(s)`);
   });
 });
 

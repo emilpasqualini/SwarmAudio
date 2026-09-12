@@ -32,7 +32,12 @@ export class Registry {
   private readonly listeners: { [K in keyof RegistryEvents]: RegistryEvents[K][] } = { join: [], leave: [], sample: [] };
   private sweeper: NodeJS.Timeout | null = null;
 
-  constructor(private readonly timeoutMs: number) {}
+  constructor(private timeoutMs: number) {}
+
+  setTimeout(ms: number): void {
+    this.timeoutMs = ms;
+    if (this.sweeper) { this.stop(); this.start(); }
+  }
 
   on<K extends keyof RegistryEvents>(event: K, fn: RegistryEvents[K]): void {
     this.listeners[event].push(fn);
