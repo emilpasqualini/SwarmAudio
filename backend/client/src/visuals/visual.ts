@@ -33,4 +33,6 @@ export interface Visual {
   draw(frame: Frame): void;
   /** Canvas size changed (CSS pixels). */
   resize?(width: number, height: number): void;
+  /** Where everyone is, 0..1 on both axes, for the phones' little map. */
+  snapshot?(): { uid: string; slot: number; x: number; y: number; h: number }[];
 }

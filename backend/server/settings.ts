@@ -78,6 +78,7 @@ export class SettingsController {
     this.registry.condition.baselineTau = s.zeroTau;
     this.registry.condition.minCutoff = s.filterMinCutoff;
     this.registry.condition.beta = s.filterBeta;
+    this.osc.queenUid = s.queenUid;
     if (s.simulate !== previous.simulate) {
       this.stopSimulation?.();
       this.stopSimulation = s.simulate > 0 ? startSimulation(this.registry, s.simulate) : null;

@@ -34,7 +34,16 @@ let state: MonitorState | null = null;
 let visual: Visual = VISUALS[0]!.make();
 const colourCache = new Map<number, string>();
 
-/** The one thing the wall tells the server: who flew into the queen. */
+/** Every 100 ms: where everyone is, so the phones can draw the swarm too. */
+let posting = false;
+setInterval(() => {
+  if (posting || !visual.snapshot) return;
+  posting = true;
+  void fetch('/api/wall', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ bees: visual.snapshot() }) })
+    .catch(() => undefined).finally(() => { posting = false; });
+}, 100);
+
+/** The wall tells the server who flew into the queen. */
 function crown(uid: string): void {
   void fetch('/api/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ queenUid: uid }) });
 }
@@ -53,13 +62,13 @@ root.append(
     el('h1', { class: 'wall-title', text: 'HIVE' }),
     el('div', { class: 'note', text: 'swarm audio' }),
   ),
-  el('div', { class: 'wall-corner top-right' }, refs.count, el('div', { class: 'note', text: 'in the swarm · im Schwarm · 参加中' })),
+  el('div', { class: 'wall-corner top-right' }, refs.count, el('div', { class: 'note', text: 'in the swarm · im schwarm · 参加中' })),
   el('div', { class: 'wall-corner bottom-left card wall-join' },
     el('div', { class: 'section-label', text: 'join · mitmachen · 参加' }),
     refs.qr,
     refs.url,
-    el('div', { class: 'note wall-steps', text: 'Scan · accept the certificate warning · tap Join.' }),
-    el('div', { class: 'note wall-steps', text: 'Scannen · Zertifikatswarnung bestätigen · Beitreten tippen.' }),
+    el('div', { class: 'note wall-steps', text: 'scan · accept the certificate warning · tap join.' }),
+    el('div', { class: 'note wall-steps', text: 'scannen · zertifikatswarnung bestätigen · beitreten tippen.' }),
     el('div', { class: 'note wall-steps', lang: 'ja', text: 'スキャン · 証明書の警告で「このWebサイトを閲覧」 · 「群れに参加する」をタップ' }),
   ),
   el('div', { class: 'wall-corner bottom-right' }, refs.swarm),

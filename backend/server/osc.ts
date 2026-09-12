@@ -106,6 +106,20 @@ export class OscOut {
     ]));
   }
 
+  /** The uid of the queen, kept here so the roster can repeat it. */
+  queenUid = '';
+
+  /** `/hive/queen s uid · i slot` — '' and 0 when there is none. */
+  private queenMessage(): Buffer {
+    const d = this.queenUid ? this.registry.list().find((x) => x.uid === this.queenUid) : undefined;
+    return encodeMessage('/hive/queen', [this.queenUid, { i: d?.slot ?? 0 }]);
+  }
+
+  queen(uid: string): void {
+    this.queenUid = uid;
+    this.send(this.queenMessage());
+  }
+
   private roster(): void {
     if (!this.flags.roster) return;
     const devices = this.registry.list();
@@ -114,6 +128,7 @@ export class OscOut {
     this.send(encodeBundle([
       encodeMessage('/hive/schema', [{ i: OSC_SCHEMA_VERSION }]),
       encodeMessage('/hive/roster', args),
+      this.queenMessage(),
     ]));
   }
 

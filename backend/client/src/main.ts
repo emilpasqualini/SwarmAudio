@@ -15,6 +15,7 @@ import './theme.css';
 import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { LANG_TAG, lang, setLang, t } from './i18n';
+import { SwarmMap } from './swarm-map';
 import type { Lang } from './i18n';
 import { checkSupport, detectPlatform, keepAwake, releaseWake, requestMotionPermission, startMotion } from './sensors';
 import type { MotionSample, MotionStream } from './sensors';
@@ -133,6 +134,7 @@ async function join(): Promise<void> {
 }
 
 function leave(): void {
+  swarmMap?.stop(); swarmMap = null;
   motion?.stop(); motion = null;
   flush();
   transport?.stop(); transport = null;
@@ -145,6 +147,7 @@ function leave(): void {
 }
 
 function showError(kind: ErrorKind): void {
+  swarmMap?.stop(); swarmMap = null;
   motion?.stop(); motion = null;
   transport?.stop(); transport = null;
   clearInterval(hzTimer);
@@ -198,7 +201,8 @@ function joinView(): HTMLElement {
 let bars: HTMLElement[] = [];
 let values: HTMLElement[] = [];
 let statusLine: HTMLElement | null = null;
-let slotBadge: HTMLElement | null = null;
+let swarmMap: SwarmMap | null = null;
+let queenLine: HTMLElement | null = null;
 
 const AXES: { key: keyof MotionSample; label: string; range: number; gyro: boolean }[] = [
   { key: 'ax', label: 'x', range: 20, gyro: false },
@@ -220,7 +224,8 @@ function streamingView(): HTMLElement {
     (a.gyro ? gyroAxes : accAxes).append(el('span', { class: 'name', text: a.label }), bar, value);
   });
 
-  slotBadge = el('div', { class: 'slot-badge', text: '·' }, el('small', { text: t('youAre') }));
+  swarmMap = new SwarmMap(deviceId.replace(/-/g, '').slice(0, 8));
+  queenLine = el('div', { class: 'queen-line', text: t('queenHint') });
   statusLine = el('div', { class: 'status' });
 
   const leaveButton = el('button', { class: 'pill quiet', text: t('leave') });
@@ -242,7 +247,7 @@ function streamingView(): HTMLElement {
   );
 
   const view = el('div', { class: 'stack' },
-    el('div', { class: 'card' }, slotBadge),
+    el('div', { class: 'card stack' }, swarmMap.canvas, queenLine),
     el('div', { class: 'card stack' },
       el('div', { class: 'section-label', text: t('acc') }),
       accAxes,
@@ -293,11 +298,15 @@ function updateLive(): void {
       values[i]!.textContent = v.toFixed(1);
     });
   }
-  if (slotBadge) {
+  if (swarmMap) {
     const colour = state.slot ? slotColour(state.slot) : 'var(--text-faint)';
-    slotBadge.style.setProperty('--slot', colour);
-    slotBadge.firstChild!.textContent = state.slot ? `#${state.slot}` : '·';
     for (const b of bars) b.style.setProperty('--slot', colour);
+    swarmMap.slot = state.slot;
+  }
+  if (queenLine) {
+    const me = swarmMap?.iAmQueen ?? false;
+    queenLine.textContent = me ? t('queenYou') : t('queenHint');
+    queenLine.classList.toggle('you', me);
   }
   if (statusLine) {
     const st = state.status === 'open' ? t('streaming') : state.status === 'connecting' ? t('connecting') : state.status === 'reconnecting' ? t('reconnecting') : t('disconnected');

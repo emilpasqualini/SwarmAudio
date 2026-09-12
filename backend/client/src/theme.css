@@ -207,14 +207,15 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
 
 /* --- the swarm ------------------------------------------------------------ */
 
-.slot-badge {
-  font-family: var(--serif);
-  font-size: 4.5rem;
-  line-height: 1;
-  text-align: center;
-  color: var(--slot);
+.swarm-map {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  background: #0a0a0a;
 }
-.slot-badge small { display: block; font-family: var(--body); font-size: 0.85rem; color: var(--text-faint); margin-top: 6px; }
+.queen-line { text-align: center; font-size: 0.95rem; color: var(--text); opacity: 0.8; }
+.queen-line.you { color: #f2c14e; font-family: var(--serif); }
 
 .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--slot, var(--accent)); flex: 0 0 auto; }
 

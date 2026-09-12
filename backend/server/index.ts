@@ -23,6 +23,7 @@ import { Registry } from './registry';
 import { Store } from './store';
 import { SettingsController } from './settings';
 import { QueenKeeper } from './queen';
+import { WallState } from './wall';
 import { Targets, parseHostPort } from './targets';
 import { OscOut } from './osc';
 import { Swarm } from './swarm';
@@ -51,6 +52,7 @@ const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
 const queen = new QueenKeeper(registry, settings);
+const wall = new WallState();
 const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, log);
 const monitor = new Monitor(
@@ -92,6 +94,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     if (pathname === '/api/settings' && req.method === 'PATCH') {
       const error = settings.update((await readJson(req)) as Record<string, unknown>);
       json(res, error ? 400 : 200, error ? { error } : settings.current); return true;
+    }
+    if (pathname === '/api/wall' && req.method === 'GET') { json(res, 200, wall.snapshot(settings.current.queenUid)); return true; }
+    if (pathname === '/api/wall' && req.method === 'POST') {
+      wall.set(((await readJson(req)) as { bees?: unknown }).bees);
+      res.writeHead(204).end(); return true;
     }
     if (pathname === '/api/devices/kick' && req.method === 'POST') {
       const { slot } = (await readJson(req)) as { slot?: number };
@@ -208,6 +215,16 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     monitor.start();
     osc.start();
     queen.start();
+    // The crown on the OSC side: an event when it moves, and once a second with the roster.
+    let lastQueen = settings.current.queenUid;
+    settings.onChange(() => {
+      const uid = settings.current.queenUid;
+      if (uid === lastQueen) return;
+      lastQueen = uid;
+      osc.queen(uid);
+      const d = registry.list().find((x) => x.uid === uid);
+      log(uid ? `queen: #${d?.slot ?? '?'} ${d?.name ? `"${d.name}" ` : ''}(${uid})` : 'queen: none');
+    });
     watchAddresses();
 
     console.log('');
