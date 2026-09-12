@@ -8,9 +8,11 @@
 //  Addresses use the slot number so a Pd patch can `route 1 2 3`. Per-sample
 //  data is one bundle so acc and gyro arrive atomically.
 //
-//    /hive/dev/<slot>/acc    f f f     m/s²
-//    /hive/dev/<slot>/gyro   f f f     °/s
-//    /hive/dev/<slot>/mag    f f       |acc| |gyro|
+//    /hive/dev/<slot>/acc      f f f   m/s², raw (gravity included)
+//    /hive/dev/<slot>/rel      f f f   m/s², smoothed and relative to the adaptive zero — 0 at rest
+//    /hive/dev/<slot>/gyro     f f f   °/s
+//    /hive/dev/<slot>/activity f       0..1, turning or jolting
+//    /hive/dev/<slot>/mag      f f f   |acc| |rel| |gyro|
 //    /hive/dev/<slot>/join   s i       platform, slot
 //    /hive/dev/<slot>/leave  i         slot
 //    /hive/swarm/count       i
@@ -42,13 +44,19 @@ export class OscOut {
   sample(s: Sample): void {
     if (!this.flags.perSample && !this.flags.mag) return;
     const [ax, ay, az] = s.acc;
+    const [rx, ry, rz] = s.rel;
     const [gx, gy, gz] = s.gyro;
     const base = `/hive/dev/${s.slot}`;
     const parts: Buffer[] = [];
     if (this.flags.perSample) {
-      parts.push(encodeMessage(`${base}/acc`, [ax, ay, az]), encodeMessage(`${base}/gyro`, [gx, gy, gz]));
+      parts.push(
+        encodeMessage(`${base}/acc`, [ax, ay, az]),
+        encodeMessage(`${base}/rel`, [rx, ry, rz]),
+        encodeMessage(`${base}/gyro`, [gx, gy, gz]),
+        encodeMessage(`${base}/activity`, [s.activity]),
+      );
     }
-    if (this.flags.mag) parts.push(encodeMessage(`${base}/mag`, [Math.hypot(ax, ay, az), Math.hypot(gx, gy, gz)]));
+    if (this.flags.mag) parts.push(encodeMessage(`${base}/mag`, [Math.hypot(ax, ay, az), Math.hypot(rx, ry, rz), Math.hypot(gx, gy, gz)]));
     this.send(encodeBundle(parts));
   }
 
