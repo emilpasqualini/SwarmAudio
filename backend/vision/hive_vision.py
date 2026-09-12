@@ -360,6 +360,9 @@ def open_capture(args: argparse.Namespace):
             print(f"[vision] camera {i} open", flush=True)
             return cap
         cap.release()
+    if getattr(open_capture, "warned", False):
+        return None
+    open_capture.warned = True   # type: ignore[attr-defined]
     print(
         "[vision] no camera could be opened.\n"
         "  - macOS must allow the app you started this from to use the camera:\n"
@@ -404,11 +407,11 @@ async def run(args: argparse.Namespace) -> None:
         print("[vision] cameras: " + " · ".join(f"{i}: {n}" for i, n in enumerate(cameras)), flush=True)
     cap = open_capture(args)
     if cap is None:
-        sys.exit(1)
+        print("[vision] no camera yet — will keep trying every few seconds", flush=True)
 
     tracker = Tracker(eps=args.eps)
     settings = {"preview": True, "mirror": bool(args.mirror), "camera": -1 if args.camera is None else int(args.camera), "reopen": False,
-                "mode": args.mode, "detectFps": args.detect_fps}
+                "mode": args.mode, "detectFps": args.detect_fps, "enabled": True}
     field = FlowField()
     density = Density()
     osc = OscOut(args.osc) if args.osc else None
@@ -438,6 +441,7 @@ async def run(args: argparse.Namespace) -> None:
                             settings["preview"] = bool(msg.get("preview", True))
                             settings["mode"] = msg.get("mode", settings["mode"]) if msg.get("mode") in ("field", "people") else settings["mode"]
                             settings["detectFps"] = float(msg.get("detectFps", settings["detectFps"]))
+                            settings["enabled"] = bool(msg.get("enabled", True))
                             wanted = int(msg.get("camera", -1))
                             if args.source is None and wanted != settings["camera"]:
                                 settings["camera"] = wanted
@@ -474,6 +478,21 @@ async def run(args: argparse.Namespace) -> None:
 
     while True:
         t0 = time.time()
+        if not settings["enabled"]:
+            # switched off on the dashboard: let the camera go (other apps can
+            # have it), keep the socket, and wait
+            if cap is not None and cap.isOpened():
+                cap.release()
+                print("[vision] camera off (dashboard) — idling", flush=True)
+            await asyncio.sleep(0.5)
+            continue
+        if cap is None or not cap.isOpened():
+            cap = open_capture(args)
+            if cap is None:
+                await asyncio.sleep(3)
+                continue
+            field.prev = None
+            last_t = time.time()
         if settings["reopen"]:
             # the dashboard picked another camera
             settings["reopen"] = False

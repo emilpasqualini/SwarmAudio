@@ -186,7 +186,7 @@ function buildProtocolCard(): void {
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
 type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps' | 'camDetectFps' | 'camPushStrength';
-type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal' | 'oscMix' | 'queenHidden' | 'camPush';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal' | 'oscMix' | 'queenHidden' | 'camPush' | 'camEnabled';
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const textInputs = new Map<TextKey, HTMLInputElement>();
@@ -354,12 +354,13 @@ function buildPage(): void {
   refs.camCard.replaceChildren(
     el('div', { class: 'row between wrap' },
       el('div', { class: 'section-label', text: 'camera — what opencv sees' }),
-      el('span', { class: 'note', text: './start.sh --vision' }),
+      el('span', { class: 'note', text: 'starts with the server' }),
     ),
     refs.camImage,
     refs.camStatus,
     el('div', { class: 'settings' },
-      el('span', { class: 'k', text: 'camera' }),
+      ...boolSetting('camEnabled', 'camera', 'the master switch: off = the camera process idles and releases the camera, nothing camera-related is sent, drawn or shown'),
+      el('span', { class: 'k', text: 'which' }),
       el('span', { class: 'row' }, refs.camSelect, el('span', { class: 'hint', text: 'built-in, or an iPhone as Continuity Camera — the list comes from the camera process' })),
       el('span', { class: 'k', text: 'mode' }),
       el('span', { class: 'row' }, refs.camModeSelect, el('span', { class: 'hint', text: 'field: a full room — optical-flow grid every frame, people a few times a second, no ids. people: small rounds — full-rate tracking with ids' })),
@@ -510,7 +511,7 @@ function updateState(): void {
   const v = state.vision;
   refs.camStatus.textContent = v.connected
     ? `connected · ${v.mode} · ${v.backend || '?'} · ${v.fps.toFixed(0)} fps · ${v.count} ${v.count === 1 ? 'person' : 'people'} · ${v.clusters} cluster${v.clusters === 1 ? '' : 's'} · spread ${v.spread.toFixed(2)} · energy ${v.energy.toFixed(2)}`
-    : 'no camera process attached — run ./start.sh --vision in a second terminal';
+    : v.enabled ? 'no camera process attached — it starts with ./start.sh (or run ./start.sh --vision elsewhere)' : 'camera off';
   refs.camImage.classList.toggle('stale', !v.connected);
   const options = [['-1', 'auto — first that opens'], ...v.cameras.map((n, i) => [String(i), `${i} · ${n}`])];
   if (refs.camSelect.childElementCount !== options.length || [...refs.camSelect.options].some((o, i) => o.value !== options[i]![0])) {

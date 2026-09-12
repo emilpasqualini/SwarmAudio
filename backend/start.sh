@@ -10,9 +10,14 @@
 #    ./start.sh --sim 3      start with three fake phones (also settable on the dashboard)
 #    ./start.sh --dev        rebuild the client on every save (for working on it)
 #    ./start.sh --no-open    do not open the dashboard in a browser
-#    ./start.sh --vision     the camera only: people tracking (Python) → the running server
-#                            (run it in a second terminal; any extra args go to hive_vision.py)
+#    ./start.sh --no-vision  do not start the camera process alongside the server
+#    ./start.sh --vision     the camera only (for a second terminal or another machine;
+#                            any extra args go to hive_vision.py)
 #    ./start.sh --help
+#
+#  The camera process starts with the server by default (it needs the Python
+#  environment, made on first use) and can be switched on and off on the
+#  dashboard — "camera" at the top of its card.
 #
 #  Ports: HIVE_HTTPS_PORT (8443, phones) and HIVE_HTTP_PORT (8080, dashboard),
 #  e.g.  HIVE_HTTP_PORT=8090 ./start.sh
@@ -23,6 +28,7 @@ cd "$(dirname "$0")"
 
 DEV=0
 OPEN=1
+VISION=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --sim)      export HIVE_SIMULATE="${2:-3}"; shift ;;
@@ -30,6 +36,7 @@ while [ $# -gt 0 ]; do
     --dev)      DEV=1 ;;
     --vision)   shift; exec "$(dirname "$0")/vision/start.sh" "$@" ;;
     --no-open)  OPEN=0 ;;
+    --no-vision) VISION=0 ;;
     -h|--help)  sed -n '3,16p' "$0" | sed -e 's/^#  \{0,1\}//' -e 's/^#$//'; exit 0 ;;
     *)          echo "unknown option: $1 (try --help)"; exit 2 ;;
   esac
@@ -73,9 +80,23 @@ if [ "$OPEN" = 1 ] && command -v open >/dev/null 2>&1; then
   ) &
 fi
 
+# --- the camera, alongside ------------------------------------------------------
+# Started here rather than by the server so it inherits this terminal's camera
+# permission. It reconnects to the server on its own and idles while the
+# dashboard has the camera switched off.
+if [ "$VISION" = 1 ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    (sleep 2; exec bash vision/start.sh 2>&1 | sed -u 's/^/[camera] /') &
+    VISION_PID=$!
+    trap 'kill "$VISION_PID" 2>/dev/null; pkill -f "hive_vision.py" 2>/dev/null || true' EXIT INT TERM
+  else
+    echo "▸ python3 not found — no camera process (install python, or run ./start.sh --vision elsewhere)"
+  fi
+fi
+
 # --- run ------------------------------------------------------------------------
 if [ "$DEV" = 1 ]; then
-  exec npm run dev
+  npm run dev
 else
-  exec npx tsx server/index.ts
+  npx tsx server/index.ts
 fi

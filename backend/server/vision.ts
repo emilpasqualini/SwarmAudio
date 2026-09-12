@@ -24,7 +24,7 @@ import { tempoOf, windowed } from './dsp';
 const STALE_MS = 2000;
 const MAX_PREVIEW = 512 * 1024;
 
-export interface VisionSettings { eps: number; mirror: boolean; preview: boolean; camera: number; mode: CamMode; detectFps: number }
+export interface VisionSettings { eps: number; mirror: boolean; preview: boolean; camera: number; mode: CamMode; detectFps: number; enabled: boolean }
 
 const CELLS = CAM_GRID.w * CAM_GRID.h;
 const BEAT_SERIES = 128;
@@ -41,7 +41,7 @@ export class VisionIn {
   private latest: VisionFrame | null = null;
   private lastAt = 0;
   private preview: Buffer | null = null;
-  private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true, camera: -1, mode: 'field', detectFps: 5 };
+  private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true, camera: -1, mode: 'field', detectFps: 5, enabled: true };
   /** flowEnergy over the last ~6 s, resampled to BEAT_HZ, for the beat. */
   private readonly beatSeries = new Float64Array(BEAT_SERIES);
   private beatHead = 0;
@@ -70,6 +70,7 @@ export class VisionIn {
       this.log('camera attached');
       socket.send(JSON.stringify({ type: 'settings', ...this.settings }));
       socket.on('message', (data, isBinary) => {
+        if (!this.settings.enabled) return;   // switched off on the dashboard: the process idles, and anything late is dropped
         if (isBinary) {
           const buf = Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer);
           this.preview = buf;
@@ -99,13 +100,15 @@ export class VisionIn {
   onFrame(fn: (f: VisionFrame) => void): void { this.frameListeners.push(fn); }
   onPreview(fn: (jpeg: Buffer) => void): void { this.previewListeners.push(fn); }
 
-  get connected(): boolean { return this.client !== null && Date.now() - this.lastAt < STALE_MS; }
+  get connected(): boolean { return this.settings.enabled && this.client !== null && Date.now() - this.lastAt < STALE_MS; }
+  get enabled(): boolean { return this.settings.enabled; }
   get current(): VisionFrame | null { return this.connected ? this.latest : null; }
   get lastPreview(): Buffer | null { return this.preview; }
 
   status(): VisionStatus {
     const f = this.current;
     return {
+      enabled: this.settings.enabled,
       connected: this.connected,
       cameras: this.cameras,
       backend: this.backend,
@@ -123,7 +126,7 @@ export class VisionIn {
 
   /** Cluster radius, mirror and preview flag; forwarded to the camera process. */
   configure(s: VisionSettings): void {
-    if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview && s.camera === this.settings.camera && s.mode === this.settings.mode && s.detectFps === this.settings.detectFps) return;
+    if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview && s.camera === this.settings.camera && s.mode === this.settings.mode && s.detectFps === this.settings.detectFps && s.enabled === this.settings.enabled) return;
     this.settings = { ...s };
     if (this.client?.readyState === this.client?.OPEN) this.client?.send(JSON.stringify({ type: 'settings', ...this.settings }));
   }
