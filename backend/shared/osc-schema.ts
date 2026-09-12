@@ -101,6 +101,7 @@ export const CAM_FIELDS: Field[] = [
   { name: 'beat',          type: 'f', unit: 'Hz',   description: 'The crowd\'s rhythm: strongest local autocorrelation peak of flowEnergy over ~4 s, 0.5–6 Hz (clapping, bouncing, swaying). 0 when nothing repeats.' },
   { name: 'beatStrength',  type: 'f', unit: '0..1', description: 'How clear that rhythm is (the autocorrelation peak).' },
   { name: 'densityMean',   type: 'f', unit: '0..1', description: 'Mean of the density grid (detected people per cell, relative to the fullest cell).' },
+  { name: 'largestShare',  type: 'f', unit: '0..1', description: 'Fraction of the people in view who stand in the largest group. 1 = one big crowd, → 0 = everyone alone.' },
 ];
 
 /** `/hive/mix` — where the bees on the wall and the people the camera sees meet (v3). */
@@ -126,7 +127,7 @@ export const MUTABLE: { family: string; key: string }[] = [
   ...['count', 'energy', 'motion', 'sync'].map((k) => ({ family: 'swarm', key: `swarm/${k}` })),
   ...['coherence', 'phaseSync', 'tempo', 'centroid', 'entropy', 'dispersion', 'leanX', 'leanY', 'onsets', 'crest'].map((k) => ({ family: 'global', key: `global/${k}` })),
   ...['count', 'clusters', 'spread', 'energy', 'centroid', 'armsUp', 'flow', 'turbulence', 'moveSync', 'converge', 'nearest', 'stillness', 'occupancy', 'cluster', 'person', 'status',
-    'flowEnergy', 'flowCoherence', 'flowCentroid', 'beat', 'densityMean', 'grid', 'gridflow', 'density'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
+    'flowEnergy', 'flowCoherence', 'flowCentroid', 'beat', 'densityMean', 'largestShare', 'shares', 'grid', 'gridflow', 'density'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
   ...['distance', 'beesInCrowd', 'queenInCrowd', 'covered', 'alignment', 'balance'].map((k) => ({ family: 'mix', key: `mix/${k}` })),
 ];
 
@@ -152,7 +153,8 @@ export const CAM_MESSAGES: MessageDoc[] = [
   { address: '/hive/cam/<field>', args: 'i / f',                                                              when: 'every camera frame',              description: 'Twins of the wide fields, one each (count, clusters, spread, energy, armsUp, turbulence, moveSync, converge, nearest, stillness, occupancy) — handy for REAPER\'s Learn.' },
   { address: '/hive/cam/centroid', args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where everyone is on average.' },
   { address: '/hive/cam/flow',     args: 'f x · f y',                                                          when: 'every camera frame',              description: 'Where the crowd drifts, frame widths per second.' },
-  { address: '/hive/cam/cluster', args: 'i index · i n · f x · f y · f r',                                     when: 'every camera frame, per cluster', description: 'x, y centre and r radius in frame widths; n people in it. Index 0..clusters−1.' },
+  { address: '/hive/cam/cluster', args: 'i index · i n · f x · f y · f r · f share',                           when: 'every camera frame, per cluster', description: 'x, y centre and r radius in frame widths; n people in it; share = n / people in view. Largest group first, index 0..clusters−1.' },
+  { address: '/hive/cam/shares',  args: 'f × clusters',                                                        when: 'every camera frame',              description: 'The groups\' shares of everyone in view, largest first, as one list — its length is the number of groups; the values add up to 1.' },
   { address: '/hive/cam/person',  args: 'i id · f x · f y · f depth · f armsUp · f crouch · f energy',        when: 'every camera frame, per person (switchable)', description: 'id is the tracker\'s, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1.' },
   { address: '/hive/cam/status',  args: 'i connected · f fps',                                                   when: 'every second',                    description: 'Whether the camera process is attached and how fast it runs.' },
   { address: '/hive/cam/grid',     args: 'f × 48',                                                               when: 'every camera frame',              description: 'Motion energy per cell of the 8×6 flow grid, row-major from the top-left (v4).' },

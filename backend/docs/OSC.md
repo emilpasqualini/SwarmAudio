@@ -114,11 +114,11 @@ Windows: the correlation and phase features look at the last second per phone;
 tempo, centroid and crest at ~4 s / ~2 s of the swarm's mean |rel| sampled at
 the swarm rate. All zero with fewer than two phones (tempo/centroid need one).
 
-## `/hive/cam` — the room as the camera sees it (23 arguments, v3)
+## `/hive/cam` — the room as the camera sees it (24 arguments, v3)
 
 From `backend/vision/hive_vision.py` (YOLO pose on a webcam, see the backend
 README) at the camera's frame rate, only while it is attached. Type tags:
-`fiiffffffffffffffffffff`. People here are anonymous tracker ids — they are
+`fiifffffffffffffffffffff`. People here are anonymous tracker ids — they are
 never matched to phones; someone can be in the picture without a phone or in
 the hive without being in the picture. Coordinates are 0..1 of the frame,
 mirrored when the dashboard says so.
@@ -148,13 +148,15 @@ mirrored when the dashboard says so.
 | 21 | `beat` | f | Hz | The crowd's rhythm: strongest local autocorrelation peak of flowEnergy over ~4 s, 0.5–6 Hz (clapping, bouncing, swaying). 0 when nothing repeats. |
 | 22 | `beatStrength` | f | 0..1 | How clear that rhythm is (the autocorrelation peak). |
 | 23 | `densityMean` | f | 0..1 | Mean of the density grid (detected people per cell, relative to the fullest cell). |
+| 24 | `largestShare` | f | 0..1 | Fraction of the people in view who stand in the largest group. 1 = one big crowd, → 0 = everyone alone. |
 
 | address | arguments | when | meaning |
 |---|---|---|---|
 | `/hive/cam/<field>` | i / f | every camera frame | Twins of the wide fields, one each (count, clusters, spread, energy, armsUp, turbulence, moveSync, converge, nearest, stillness, occupancy) — handy for REAPER's Learn. |
 | `/hive/cam/centroid` | f x · f y | every camera frame | Where everyone is on average. |
 | `/hive/cam/flow` | f x · f y | every camera frame | Where the crowd drifts, frame widths per second. |
-| `/hive/cam/cluster` | i index · i n · f x · f y · f r | every camera frame, per cluster | x, y centre and r radius in frame widths; n people in it. Index 0..clusters−1. |
+| `/hive/cam/cluster` | i index · i n · f x · f y · f r · f share | every camera frame, per cluster | x, y centre and r radius in frame widths; n people in it; share = n / people in view. Largest group first, index 0..clusters−1. |
+| `/hive/cam/shares` | f × clusters | every camera frame | The groups' shares of everyone in view, largest first, as one list — its length is the number of groups; the values add up to 1. |
 | `/hive/cam/person` | i id · f x · f y · f depth · f armsUp · f crouch · f energy | every camera frame, per person (switchable) | id is the tracker's, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1. |
 | `/hive/cam/status` | i connected · f fps | every second | Whether the camera process is attached and how fast it runs. |
 | `/hive/cam/grid` | f × 48 | every camera frame | Motion energy per cell of the 8×6 flow grid, row-major from the top-left (v4). |
@@ -195,7 +197,7 @@ matched to a phone. At the swarm rate; each field also as `/hive/mix/<name>`.
 Every family has a switch on the dashboard (settings: *osc …*), and every
 small message has its own chip under *osc parameters* — off means not sent,
 which saves Wi-Fi traffic for whatever nobody patches. Mutable keys:
-`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `dev/queen`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `cam/flowEnergy`, `cam/flowCoherence`, `cam/flowCentroid`, `cam/beat`, `cam/densityMean`, `cam/grid`, `cam/gridflow`, `cam/density`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
+`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `dev/queen`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `cam/flowEnergy`, `cam/flowCoherence`, `cam/flowCentroid`, `cam/beat`, `cam/densityMean`, `cam/largestShare`, `cam/shares`, `cam/grid`, `cam/gridflow`, `cam/density`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
 
 **REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
 *Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that

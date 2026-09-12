@@ -117,7 +117,7 @@ export class VisionIn {
       flowX: f?.flowX ?? 0, flowY: f?.flowY ?? 0, turbulence: f?.turbulence ?? 0, moveSync: f?.moveSync ?? 0,
       converge: f?.converge ?? 0, nearest: f?.nearest ?? 0, stillness: f?.stillness ?? 0, occupancy: f?.occupancy ?? 0,
       flowEnergy: f?.flowEnergy ?? 0, flowCoherence: f?.flowCoherence ?? 0, flowCx: f?.flowCx ?? 0.5, flowCy: f?.flowCy ?? 0.5,
-      beat: f?.beat ?? 0, beatStrength: f?.beatStrength ?? 0, densityMean: f?.densityMean ?? 0, mode: f?.mode ?? this.settings.mode,
+      beat: f?.beat ?? 0, beatStrength: f?.beatStrength ?? 0, densityMean: f?.densityMean ?? 0, largestShare: f?.largestShare ?? 0, mode: f?.mode ?? this.settings.mode,
     };
   }
 
@@ -221,9 +221,12 @@ export class VisionIn {
       : [];
     const clusters: VisionCluster[] = Array.isArray(raw['clusters'])
       ? (raw['clusters'] as Record<string, unknown>[]).slice(0, 64).map((c) => ({
-        n: Math.round(num(c['n'], 0, 64)), x: num(c['x'], 0, 1), y: num(c['y'], 0, 1), r: num(c['r'], 0, 1),
+        n: Math.round(num(c['n'], 0, 64)), x: num(c['x'], 0, 1), y: num(c['y'], 0, 1), r: num(c['r'], 0, 1), share: 0,
       }))
       : [];
+    // each group's share of everyone in view, largest first
+    clusters.sort((a, b) => b.n - a.n);
+    for (const c of clusters) c.share = people.length ? c.n / people.length : 0;
     const flowRaw = Array.isArray(raw['flow']) && (raw['flow'] as unknown[]).length === CELLS ? (raw['flow'] as unknown[]) : null;
     const flow: [number, number, number][] = flowRaw
       ? flowRaw.map((c) => Array.isArray(c) ? [num(c[0], -5, 5), num(c[1], -5, 5), num(c[2], 0, 1)] as [number, number, number] : [0, 0, 0])
@@ -248,6 +251,7 @@ export class VisionIn {
       flowCx: num(raw['flowCx'], 0, 1), flowCy: num(raw['flowCy'], 0, 1),
       beat: 0, beatStrength: 0,
       densityMean: num(raw['densityMean'], 0, 1),
+      largestShare: clusters[0]?.share ?? 0,
       mode: raw['mode'] === 'people' ? 'people' : 'field',
     };
   }

@@ -96,7 +96,8 @@ The protocol is documented in **[docs/OSC.md](docs/OSC.md)** — generated from
 /hive/dev/<slot>/acc|rel|gyro|activity|mag|turn|queen       the same per-sample data, one small message each
 /hive/global   s "global" · f t · i count · coherence · phaseSync · tempo · centroid · entropy · dispersion · leanX · leanY · onsets · crest
 /hive/cam      f t · i count · i clusters · spread · energy · cx · cy · armsUp · flowX · flowY · turbulence · moveSync · converge · nearest · stillness · occupancy
-/hive/cam/cluster · /hive/cam/person · /hive/cam/status      groups, tracked people (anonymous), whether the camera runs
+/hive/cam/cluster · /hive/cam/shares · /hive/cam/person      groups (n, position, share of everyone), the shares as one list, tracked people (anonymous)
+/hive/cam/grid · gridflow · density · beat · status          the field: 8×6 motion energy / flow / density, the crowd's rhythm, whether the camera runs
 /hive/mix      f t · i bees · i people · distance · beesInCrowd · queenInCrowd · covered · alignment · balance
 ```
 
@@ -315,6 +316,8 @@ frame widths, default 0.12): a chain of people each within $\varepsilon$ of the
 next is one group. Each cluster reports its size $n$, centroid and radius
 $\max_p\|\mathbf p-\bar{\mathbf p}\|$.
 
+Each cluster also carries its **share** $=n_j/N$ of everyone in view (largest
+first; `/hive/cam/shares` is the list of all shares, `largestShare` the first).
 Room numbers: **count**; **spread** = mean pairwise distance
 $\frac{1}{\binom N2}\sum_{p<q}\|\mathbf p-\mathbf q\|$; **energy** = mean person
 energy; **cx, cy** = centroid of everyone; **armsUp** = mean.

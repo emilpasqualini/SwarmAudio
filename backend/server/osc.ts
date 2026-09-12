@@ -54,7 +54,7 @@ export function globalArgs(g: GlobalFeatures, t: number): OscArg[] {
 export function camArgs(f: VisionFrame, t: number): OscArg[] {
   return [t, { i: f.count }, { i: f.clusters.length }, f.spread, f.energy, f.cx, f.cy, f.armsUp,
     f.flowX, f.flowY, f.turbulence, f.moveSync, f.converge, f.nearest, f.stillness, f.occupancy,
-    f.flowEnergy, f.flowCoherence, f.flowCx, f.flowCy, f.beat, f.beatStrength, f.densityMean];
+    f.flowEnergy, f.flowCoherence, f.flowCx, f.flowCy, f.beat, f.beatStrength, f.densityMean, f.largestShare];
 }
 
 /** Arguments of `/hive/mix`. Order and meaning: MIX_FIELDS. Append only. */
@@ -195,11 +195,13 @@ export class OscOut {
       this.small('cam/flowCentroid', '/hive/cam/flowCentroid', [f.flowCx, f.flowCy]),
       this.small('cam/beat', '/hive/cam/beat', [f.beat, f.beatStrength]),
       this.small('cam/densityMean', '/hive/cam/densityMean', [f.densityMean]),
+      this.small('cam/largestShare', '/hive/cam/largestShare', [f.largestShare]),
+      f.clusters.length ? this.small('cam/shares', '/hive/cam/shares', f.clusters.map((c) => c.share)) : null,
       this.small('cam/grid', '/hive/cam/grid', f.flow.map((c) => c[2])),
       this.small('cam/gridflow', '/hive/cam/gridflow', f.flow.flatMap((c) => [c[0], c[1]])),
       this.small('cam/density', '/hive/cam/density', f.density),
     ]) if (m) parts.push(m);
-    if (!this.muted.has('cam/cluster')) f.clusters.forEach((c, i) => parts.push(encodeMessage('/hive/cam/cluster', [{ i }, { i: c.n }, c.x, c.y, c.r])));
+    if (!this.muted.has('cam/cluster')) f.clusters.forEach((c, i) => parts.push(encodeMessage('/hive/cam/cluster', [{ i }, { i: c.n }, c.x, c.y, c.r, c.share])));
     if (this.flags.camPersons && !this.muted.has('cam/person')) {
       for (const p of f.people) parts.push(encodeMessage('/hive/cam/person', [{ i: p.id }, p.x, p.y, p.depth, p.armsUp, p.crouch, p.energy]));
     }
