@@ -33,9 +33,10 @@ const log = (line: string): void => console.log(`[hive] ${line}`);
 
 // --- pieces -------------------------------------------------------------------
 
-const addresses = lanAddresses();
-const ips = addresses.map((a) => a.address);
-const urls = ips.map((ip) => `https://${ip}:${config.httpsPort}`);
+let addresses = lanAddresses();
+let ips = addresses.map((a) => a.address);
+const toUrls = (list: string[]): string[] => list.map((ip) => `https://${ip}:${config.httpsPort}`);
+const urls = toUrls(ips);
 const qrUrl = urls[0] ?? `https://localhost:${config.httpsPort}`;
 
 const credentials = loadOrCreateCertificate(config.certDir, ips);
@@ -178,11 +179,32 @@ const http = createHttpServer((req, res) => {
 // Plain-HTTP upgrades: feed and monitor only — phones must come over TLS.
 http.on('upgrade', (req, socket, head) => onUpgrade(req, socket, head, false));
 
+// The Mac changes network — hotspot at home, the venue's Wi-Fi, its own
+// hotspot for the show — and every time the QR code and the certificate
+// would go stale. So the interfaces are polled, and on a change the
+// certificate is re-issued and swapped into the live server (no restart,
+// phones already connected stay connected) and the dashboards get the new QR.
+function watchAddresses(): void {
+  setInterval(() => {
+    const now = lanAddresses();
+    const nowIps = now.map((a) => a.address);
+    if (nowIps.join(',') === ips.join(',')) return;
+    addresses = now;
+    ips = nowIps;
+    const next = loadOrCreateCertificate(config.certDir, ips);
+    https.setSecureContext({ key: next.key, cert: next.cert });
+    const nextUrls = toUrls(ips);
+    monitor.setAddresses(nextUrls, nextUrls[0] ?? `https://localhost:${config.httpsPort}`);
+    log(`network changed → ${nextUrls.join(', ') || 'no LAN address'}${next.regenerated ? ' (new certificate)' : ''}`);
+  }, 3000);
+}
+
 https.listen(config.httpsPort, '0.0.0.0', () => {
   http.listen(config.httpPort, '0.0.0.0', async () => {
     registry.start();
     swarm.start();
     monitor.start();
+    watchAddresses();
 
     console.log('');
     console.log('  HIVE — swarm audio backend');
