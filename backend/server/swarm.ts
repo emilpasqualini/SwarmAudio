@@ -21,7 +21,12 @@ export class Swarm {
   private readonly listeners: ((f: SwarmFeatures) => void)[] = [];
   latest: SwarmFeatures = { t: Date.now(), count: 0, energy: 0, motion: 0, sync: 1 };
 
-  constructor(private readonly registry: Registry, private readonly hz: number) {}
+  constructor(private readonly registry: Registry, private hz: number) {}
+
+  setHz(hz: number): void {
+    this.hz = hz;
+    if (this.timer) { this.stop(); this.start(); }
+  }
 
   on(fn: (f: SwarmFeatures) => void): void { this.listeners.push(fn); }
 

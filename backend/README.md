@@ -18,24 +18,30 @@ phone (Safari / Chrome)        Mac: backend                       sound
 
 ```bash
 cd backend
-npm install
-npm run dev          # builds the client on save + runs the server
+./start.sh                 # checks Node, installs, builds, starts, opens the dashboard
+./start.sh --sim 3         # …with three fake phones
+./start.sh --dev           # rebuild the phone app on every save
 ```
 
 The terminal prints the phone URL as a QR code, e.g. `https://172.20.10.2:8443`,
-and the dashboard URL `http://localhost:8080/monitor`. Open the dashboard on the
-Mac — it shows the same QR code big enough to scan from across a table.
+and the dashboard opens at `http://localhost:8080/monitor` — the same QR code
+big enough to scan from across a table.
 
-Without phones: `HIVE_SIMULATE=3 npm start` creates three virtual devices that
-tilt and turn on their own, through the exact same pipeline.
+**Everything else is configured on the dashboard** and saved to
+`hive.config.json`, so it is the same after a restart:
 
-| env | default | |
-|---|---|---|
-| `HIVE_OSC_TARGETS` | `127.0.0.1:9000` | initial OSC targets, `host:port,host:port` (later edited on the dashboard, persisted in `hive.config.json`) |
-| `HIVE_HTTPS_PORT` | `8443` | phones |
-| `HIVE_HTTP_PORT` | `8080` | dashboard, `/feed`, API |
-| `HIVE_SIMULATE` | `0` | number of fake phones |
-| `HIVE_SWARM_HZ` | `30` | rate of `/hive/swarm/*` |
+| dashboard | what |
+|---|---|
+| OSC targets | add/remove laptops (`host:port`), enable/disable, Ping, send counter, last error |
+| fake phones | 0–50 virtual devices through the real pipeline (also `--sim n`) |
+| swarm rate | Hz of `/hive/swarm/*` |
+| device timeout | ms of silence before a phone is dropped |
+| osc acc + gyro / magnitudes / swarm | switch each message family on or off |
+| × in the device table | drop a device now |
+| test tones | sonify the swarm on this Mac |
+
+Only the ports come from the environment and need a restart:
+`HIVE_HTTPS_PORT` (8443, phones) and `HIVE_HTTP_PORT` (8080, dashboard and `/feed`).
 
 ## On the phone
 
@@ -114,7 +120,8 @@ carries it. This is Web Audio in the browser — a check, not the installation.
 
 ```
 shared/protocol.ts   binary frame: 12-byte header + n × 7 float32   (npm run protocol:test)
-server/              ingest (ws + POST) · registry · osc fan-out · targets · swarm · feed · monitor · simulate
+server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
+start.sh             the one command
 client/src/          phone app (main, sensors, transport, i18n) · dashboard (monitor, tones) · theme.css
 examples/            osc_listen.py · feed_client.py · hive-receive.pd
 scripts/             osc-listen.ts (npm run osc:listen -- 9000)

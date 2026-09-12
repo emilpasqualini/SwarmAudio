@@ -11,6 +11,7 @@ import type { Registry } from './registry';
 import type { Targets } from './targets';
 import type { Swarm } from './swarm';
 import type { Feed } from './feed';
+import type { SettingsController } from './settings';
 import type { MonitorHello, MonitorState } from '../shared/types';
 
 export class Monitor {
@@ -24,6 +25,7 @@ export class Monitor {
     private readonly targets: Targets,
     private readonly swarm: Swarm,
     private readonly feed: Feed,
+    private readonly settings: SettingsController,
     private readonly hz: number,
   ) {
     this.wss.on('connection', (socket) => {
@@ -35,6 +37,7 @@ export class Monitor {
     });
     // Push immediately when the target list changes; the 10 Hz tick covers the rest.
     targets.onChange(() => this.push());
+    settings.onChange(() => this.push());
   }
 
   start(): void { this.timer ??= setInterval(() => this.push(), 1000 / this.hz); }
@@ -54,6 +57,7 @@ export class Monitor {
       targets: this.targets.all(),
       feedSubscribers: this.feed.subscribers,
       swarm: this.swarm.latest,
+      settings: this.settings.current,
     };
     return JSON.stringify(state);
   }

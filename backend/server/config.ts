@@ -19,12 +19,10 @@ export const config = {
   httpPort: int('HIVE_HTTP_PORT', 8080),
   /** Initial OSC targets as `host:port[,host:port]`; the dashboard can edit them later. */
   oscTargets: process.env.HIVE_OSC_TARGETS ?? '127.0.0.1:9000',
-  /** Swarm feature rate, Hz. */
-  swarmHz: int('HIVE_SWARM_HZ', 30),
   /** Dashboard refresh, Hz. */
   monitorHz: int('HIVE_MONITOR_HZ', 10),
-  /** A device that has not sent anything for this long has left. */
-  deviceTimeoutMs: int('HIVE_DEVICE_TIMEOUT_MS', 3000),
+  /** Fake phones for this run; overrides the stored setting when set. */
+  simulate: process.env.HIVE_SIMULATE === undefined ? null : int('HIVE_SIMULATE', 0),
   certDir: resolve(import.meta.dirname, '..', 'certs'),
   configFile: resolve(import.meta.dirname, '..', 'hive.config.json'),
   clientDir: resolve(import.meta.dirname, '..', 'dist', 'client'),
