@@ -2,7 +2,11 @@
 //  bees.ts
 //  HIVE (client, wall)
 //
-//  One bee per phone, flying over the wall.
+//  One animal per phone, moving over the wall — bees, or sheep (dashboard:
+//  species). The flight model, the crown and the camera layer are the same
+//  for every species; only the drawing differs. A sheep walks (legs swing with
+//  its speed), and when it rests it either lies down or grazes — chosen at
+//  random each time it comes to rest. The queen sheep is bigger and black.
 //
 //  A bee has a heading and a speed, and the phone steers it: how much the phone
 //  moves sets the speed and how hard the wings beat, turning the phone about
@@ -76,7 +80,10 @@ interface Bee {
   x: number; y: number;           // world position
   heading: number;                // radians, 0 = right, clockwise on screen
   speed: number;                  // world units per second
-  wingPhase: number;              // radians, advances with the beat frequency
+  wingPhase: number;              // radians, advances with the beat frequency (bees) or the gait (sheep)
+  idleAnim: 'lie' | 'graze' | null;   // sheep: what it does at rest, picked when it comes to rest
+  facing: 1 | -1;                 // sheep: which way it looks — flips with the heading, with some hysteresis
+  restingSince: number;           // seconds, for the idle animation's timing
   tiltX: number; tiltY: number;   // −1..1, from the server's rel
   activity: number;               // 0..1, from the server
   turn: number;                   // °/s about the vertical, from the server
@@ -132,6 +139,69 @@ function drawBee(ctx: CanvasRenderingContext2D, r: number, colour: string, wing:
   ctx.stroke();
 }
 
+/**
+ * A sheep seen from the side, in its own frame: origin at the body's centre,
+ * +x is the way it faces (the caller mirrors for left), unit r. `gait` swings
+ * the legs, `walk` (0..1) is how much; `idle` is what a resting sheep does,
+ * with `idleT` seconds into it.
+ */
+function drawSheep(ctx: CanvasRenderingContext2D, r: number, wool: string, tag: string, gait: number, walk: number,
+  idle: 'lie' | 'graze' | null, idleT: number, queen: boolean): void {
+  const dark = queen ? '#3a3a3a' : '#2b2b2b';
+  const lying = idle === 'lie', graze = idle === 'graze';
+  const breathe = lying ? 1 + 0.03 * Math.sin(idleT * 1.6) : 1;
+  const ground = 1.15 * r;                       // where the hooves touch
+  const bodyY = lying ? 0.45 * r : -0.05 * r;    // a lying sheep sits low
+  // legs — four, swinging in diagonal pairs; tucked away when lying
+  if (!lying) {
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = Math.max(1.5, r * 0.2);
+    ctx.lineCap = 'round';
+    const swing = Math.sin(gait) * 0.3 * r * walk;
+    for (const [lx, phase] of [[0.65, 1], [0.4, -1], [-0.4, -1], [-0.65, 1]] as const) {
+      ctx.beginPath(); ctx.moveTo(lx * r, 0.45 * r); ctx.lineTo(lx * r + swing * phase, ground); ctx.stroke();
+    }
+  }
+  // wool: an oval of overlapping puffs — the black sheep gets a thin white rim so it reads on the black wall
+  const bw = 1.15 * r * breathe, bh = (lying ? 0.6 : 0.72) * r * breathe;
+  const woolFill = (grow: number): void => {
+    ctx.beginPath(); ctx.ellipse(-0.05 * r, bodyY, bw + grow, bh + grow, 0, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.3;
+      ctx.beginPath(); ctx.arc(-0.05 * r + Math.cos(a) * bw * 0.72, bodyY + Math.sin(a) * bh * 0.7, r * 0.4 * breathe + grow, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(-1.25 * r, bodyY - 0.25 * r, r * 0.18 + grow, 0, Math.PI * 2); ctx.fill();
+  };
+  if (queen) { ctx.fillStyle = '#ffffff'; woolFill(Math.max(1.5, r * 0.1)); }   // the rim: the same shape, a little larger, in white underneath
+  ctx.fillStyle = wool;
+  woolFill(0);
+  // head: up when walking, down in the grass when grazing, resting low when lying
+  const nibble = graze ? 0.05 * r * Math.sin(idleT * 6) : 0;
+  const hx = graze ? 1.15 * r + nibble : lying ? 1.05 * r : 1.1 * r;
+  const hy = graze ? ground - 0.35 * r : lying ? bodyY - 0.05 * r : bodyY - 0.55 * r;
+  ctx.save();
+  ctx.translate(hx, hy);
+  ctx.rotate(graze ? 0.9 : lying ? 0.1 : -0.15);
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.ellipse(0, 0, 0.45 * r, 0.32 * r, 0, 0, Math.PI * 2); ctx.fill();
+  // ear with the slot's tag, and an eye
+  ctx.beginPath(); ctx.ellipse(-0.2 * r, -0.3 * r, 0.22 * r, 0.1 * r, -0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = tag;
+  ctx.beginPath(); ctx.arc(-0.24 * r, -0.32 * r, 0.08 * r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = queen ? '#f2c14e' : '#ffffff';
+  ctx.beginPath(); ctx.arc(0.14 * r, -0.08 * r, 0.05 * r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  if (graze) {
+    // a tuft of grass under the nose
+    ctx.strokeStyle = 'rgba(120,180,110,0.85)';
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    ctx.lineCap = 'round';
+    for (const dx of [-0.15, 0, 0.15]) {
+      ctx.beginPath(); ctx.moveTo((1.45 + dx) * r, ground); ctx.lineTo((1.45 + dx * 2) * r, ground - 0.3 * r); ctx.stroke();
+    }
+  }
+}
+
 export class Bees implements Visual {
   private readonly bees = new Map<number, Bee>();
   private aspect = 16 / 9;
@@ -164,7 +234,7 @@ export class Bees implements Visual {
         slot: msg.slot, uid: msg.uid, name: msg.name,
         x, y,
         heading: Math.atan2(0.5 - y, this.aspect / 2 - x),   // set off toward the middle
-        speed: 0, wingPhase: Math.random() * Math.PI * 2,
+        speed: 0, wingPhase: Math.random() * Math.PI * 2, idleAnim: null, restingSince: 0, facing: 1,
         tiltX: 0, tiltY: 0, activity: 0, turn: 0, idle: 0,
         alpha: 0, leaving: false, trail: [],
       });
@@ -211,7 +281,8 @@ export class Bees implements Visual {
     return best;
   }
 
-  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling }: Frame): void {
+  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling, species }: Frame): void {
+    const sheep = species === 'sheep';
     this.aspect = width / height;
     const w = this.aspect;
     this.clock = time;
@@ -234,7 +305,7 @@ export class Bees implements Visual {
     const queen = this.crowned?.uid ?? serverQueen;
     const live = [...this.bees.values()].filter((b) => !b.leaving).length;
     const shrink = Math.min(1, Math.sqrt(FULL_SIZE_UP_TO / Math.max(1, live)));
-    const r0 = Math.min(width, height) * this.radius * shrink;
+    const r0 = Math.min(width, height) * this.radius * shrink * (sheep ? 1.5 : 1);   // a sheep is a bigger animal
     const sizeOf = (b: Bee): number => b.uid === queen ? QUEEN_SCALE : 1;
 
     const all = [...this.bees.values()];
@@ -300,15 +371,20 @@ export class Bees implements Visual {
       b.y += Math.sin(b.heading) * b.speed * dt;
       const beat = resting ? 0.6 : (isQueen ? 1.5 + 8 * b.activity : 2 + 16 * b.activity);   // Hz
       const amplitude = resting ? 0.08 : 0.15 + 0.55 * Math.min(1, b.activity * 1.5);        // rad
-      b.wingPhase = (b.wingPhase + Math.PI * 2 * beat * dt) % (Math.PI * 2);
+      // bees: wings beat with activity. sheep: legs swing with the distance walked.
+      if (sheep) b.wingPhase = (b.wingPhase + b.speed * 60 * dt) % (Math.PI * 2);
+      else b.wingPhase = (b.wingPhase + Math.PI * 2 * beat * dt) % (Math.PI * 2);
       const wing = Math.sin(b.wingPhase) * amplitude;
+      // a sheep that comes to rest decides — by lot — whether to lie down or graze
+      if (resting && b.idleAnim === null) { b.idleAnim = Math.random() < 0.5 ? 'lie' : 'graze'; b.restingSince = time; }
+      if (!resting && b.speed > 0.02) b.idleAnim = null;
 
       if (resting && running) {
         // Drift toward a resting spot of one's own on a ring around the middle
         // — not the middle itself, or every resting bee would pile up there and
         // the crown would change hands among people doing nothing.
         const ang = b.slot * 2.399963;             // golden angle: slots spread evenly
-        const hx = w / 2 + Math.cos(ang) * 0.22, hy = 0.5 + Math.sin(ang) * 0.22;
+        const hx = w / 2 + Math.cos(ang) * 0.2, hy = 0.42 + Math.sin(ang) * 0.18;   // a little high, clear of the QR cards
         const aH = lerpFactor(HOME_TAU, dt);
         b.x += (hx - b.x) * aH;
         b.y += (hy - b.y) * aH;
@@ -324,6 +400,28 @@ export class Bees implements Visual {
       // --- draw -----------------------------------------------------------------
       const px = b.x * height, py = b.y * height;
       const c = isQueen ? QUEEN_COLOUR : colour(b.slot);
+
+      if (sheep) {
+        // sheep leave no trail and no glow; the queen is the big black one
+        const wool = isQueen ? '#111111' : '#f1ede6';
+        ctx.globalAlpha = b.alpha;
+
+        // a sheep does not turn like a bee: it faces left or right, and flips when its way clearly changes
+        const cx = Math.cos(b.heading);
+        if (cx > 0.25) b.facing = 1; else if (cx < -0.25) b.facing = -1;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.scale(b.facing, 1);
+        drawSheep(ctx, r, wool, colour(b.slot), b.wingPhase, Math.min(1, b.speed / (SPEED * 0.6)), resting ? b.idleAnim : null, time - b.restingSince, isQueen);
+        ctx.restore();
+        ctx.globalAlpha = b.alpha;
+        ctx.fillStyle = isQueen ? QUEEN_COLOUR : '#ffffff';
+        ctx.font = `${Math.max(11, r0 * 1.3)}px Bitter, Georgia, serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText((isQueen ? '♛ ' : '') + (b.name || `#${b.slot}`), px, py + r * 1.6);
+        continue;
+      }
 
       ctx.strokeStyle = c;
       ctx.lineWidth = Math.max(1, r * 0.3);

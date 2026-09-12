@@ -16,7 +16,8 @@ import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
-import { SETTINGS_LIMITS, wifiQrText } from '../../shared/types';
+import { SETTINGS_LIMITS, SPECIES, wifiQrText } from '../../shared/types';
+import type { Species } from '../../shared/types';
 import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, MIX_FIELDS, MUTABLE, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
@@ -101,10 +102,15 @@ const refs = {
   wifiName: el('div', { class: 'url' }),
   queenClear: el('button', { class: 'pill small quiet', text: 'none', title: 'no queen; the next one is crowned after queen after seconds' }),
   volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
-  settingsCard: el('div', { class: 'card stack' }),
+  swarmSettings: el('div', { class: 'card stack' }),
+  signalSettings: el('div', { class: 'card stack' }),
+  wallSettings: el('div', { class: 'card stack' }),
+  oscSettings: el('div', { class: 'card stack' }),
+  species: el('select', {}),
   protocolCard: el('div', { class: 'card stack' }),
   camImage: el('img', { class: 'cam-preview', alt: 'camera preview' }),
   camStatus: el('div', { class: 'note', text: 'no camera process attached' }),
+  camSelect: el('select', {}),
   camCard: el('div', { class: 'card stack' }),
   globalRow: el('div', { class: 'global-row' }),
   mixRow: el('div', { class: 'global-row' }),
@@ -243,37 +249,47 @@ function updateMuteGrid(s: Settings): void {
   for (const [key, chip] of muteChips) chip.classList.toggle('on', !muted.has(key));
 }
 
-function buildSettingsCard(h: MonitorHello): void {
-  refs.settingsCard.replaceChildren(
-    el('div', { class: 'section-label', text: 'settings' }),
-    el('div', { class: 'settings' },
-      ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
-      ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
-      ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
-      el('span', { class: 'k', text: 'queen' }),
-      el('span', { class: 'row' }, refs.queenNote, refs.queenClear),
-      ...numberSetting('queenAfter', 'queen after', 's without a queen until the phone that moved most is crowned'),
-      ...numberSetting('filterMinCutoff', 'filter: min cutoff', 'Hz — One-Euro cutoff at rest; lower = calmer rel when still', 0.05),
-      ...numberSetting('filterBeta', 'filter: beta', 'how much the cutoff rises with speed of change; higher = snappier gestures', 0.05),
-      ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
-      ...numberSetting('zeroTau', 'zero: slide time', 's — time constant of the zero sliding over; rel → 0 at rest', 0.1),
-      ...boolSetting('wifiHotspot', 'iphone hotspot', 'on: the phones join an iPhone personal hotspot (name + password are under settings → personal hotspot on that iPhone; turn on "maximise compatibility"; that iPhone itself cannot join). off: any other wi-fi'),
-      ...textSetting('wifiSsid', 'wi-fi name', 'shown as a QR code here and on the wall; macOS hides the SSID from apps, so type it', "Emil's iPhone"),
-      ...textSetting('wifiPassword', 'wi-fi password', 'empty = open network'),
-      ...boolSetting('wallWifiCode', 'wall: wi-fi code', 'show the wi-fi QR code on the wall — off once everyone is on the network'),
-      ...boolSetting('wallJoinCode', 'wall: join code', 'show the join QR code on the wall — off once everyone is in, the bees get the whole wall'),
-      ...boolSetting('oscWide', 'osc /hive/sample', 'the wide message: everything per sample, fixed order — see protocol card'),
-      ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
-      ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
-      ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm (wide) + /hive/swarm/count · energy · motion · sync'),
-      ...boolSetting('oscGlobal', 'osc global', '/hive/global — coherence · phaseSync · tempo · centroid · entropy · dispersion · lean · onsets · crest, + one message each'),
-      ...boolSetting('oscMix', 'osc mix', '/hive/mix — bees ⇄ camera: distance · beesInCrowd · queenInCrowd · covered · alignment · balance'),
-      el('span', { class: 'k', text: 'ports' }),
-      el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
-      el('span', { class: 'k', text: 'saved to' }),
-      el('span', { class: 'note url', text: h.configFile }),
-    ),
-  );
+/** Settings in four cards, spread over the columns so the page has no holes. */
+function settingsCard(title: string, ...rows: HTMLElement[]): HTMLElement {
+  return el('div', { class: 'card stack' }, el('div', { class: 'section-label', text: title }), el('div', { class: 'settings' }, ...rows));
+}
+
+function buildSettingsCards(h: MonitorHello): void {
+  refs.swarmSettings.replaceChildren(...settingsCard('swarm',
+    ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
+    ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm, /hive/global, /hive/mix'),
+    ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
+    el('span', { class: 'k', text: 'queen' }),
+    el('span', { class: 'row' }, refs.queenNote, refs.queenClear),
+    ...numberSetting('queenAfter', 'queen after', 's without a queen until the phone that moved most is crowned'),
+    el('span', { class: 'k', text: 'species' }),
+    el('span', { class: 'row' }, refs.species, el('span', { class: 'hint', text: 'what the wall draws: bees or sheep — same mechanics, the queen is the big one' })),
+  ).children);
+  refs.signalSettings.replaceChildren(...settingsCard('signal',
+    ...numberSetting('filterMinCutoff', 'filter: min cutoff', 'Hz — One-Euro cutoff at rest; lower = calmer rel when still', 0.05),
+    ...numberSetting('filterBeta', 'filter: beta', 'how much the cutoff rises with speed of change; higher = snappier gestures', 0.05),
+    ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
+    ...numberSetting('zeroTau', 'zero: slide time', 's — time constant of the zero sliding over; rel → 0 at rest', 0.1),
+  ).children);
+  refs.wallSettings.replaceChildren(...settingsCard('wall & wi-fi',
+    ...boolSetting('wifiHotspot', 'iphone hotspot', 'on: an iPhone personal hotspot (name + password under settings → personal hotspot; switch on "maximise compatibility"; that iPhone itself cannot join). off: any other wi-fi'),
+    ...textSetting('wifiSsid', 'wi-fi name', 'as a QR code here and on the wall; macOS hides the SSID from apps, so type it', "Emil's iPhone"),
+    ...textSetting('wifiPassword', 'wi-fi password', 'empty = open network'),
+    ...boolSetting('wallWifiCode', 'wall: wi-fi code', 'show the wi-fi QR code on the wall — off once everyone is on the network'),
+    ...boolSetting('wallJoinCode', 'wall: join code', 'show the join QR code on the wall — off once everyone is in'),
+  ).children);
+  refs.oscSettings.replaceChildren(...settingsCard('osc families',
+    ...boolSetting('oscWide', '/hive/sample', 'the wide message: everything per sample, fixed order — see protocol card'),
+    ...boolSetting('oscPerField', 'per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
+    ...boolSetting('oscRoster', 'roster', '/hive/roster + /hive/schema + /hive/queen + /hive/cam/status every second'),
+    ...boolSetting('oscSwarm', 'swarm', '/hive/swarm + count · energy · motion · sync'),
+    ...boolSetting('oscGlobal', 'global', '/hive/global + one message per field'),
+    ...boolSetting('oscMix', 'mix', '/hive/mix — bees ⇄ camera'),
+    el('span', { class: 'k', text: 'ports' }),
+    el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed, /vision) — HIVE_HTTPS_PORT / HIVE_HTTP_PORT, restart` }),
+    el('span', { class: 'k', text: 'saved to' }),
+    el('span', { class: 'note url', text: h.configFile }),
+  ).children);
 }
 
 let wifiDrawn = '';
@@ -292,6 +308,7 @@ function drawWifiQr(s: Settings): void {
 
 function updateSettings(s: Settings): void {
   updateMuteGrid(s);
+  if (document.activeElement !== refs.species) refs.species.value = s.species;
   refs.startButton.textContent = s.running ? 'pause' : 'start';
   refs.startButton.classList.toggle('on', s.running);
   refs.roundNote.textContent = `round ${s.round} · ${s.running ? 'running' : 'paused'}`;
@@ -339,6 +356,8 @@ function buildPage(): void {
     refs.camImage,
     refs.camStatus,
     el('div', { class: 'settings' },
+      el('span', { class: 'k', text: 'camera' }),
+      el('span', { class: 'row' }, refs.camSelect, el('span', { class: 'hint', text: 'built-in, or an iPhone as Continuity Camera — the list comes from the camera process' })),
       ...boolSetting('camPreview', 'preview', 'the annotated picture above, ~8 fps; off saves the camera process some work'),
       ...boolSetting('oscCam', 'osc camera', '/hive/cam (wide) + count · clusters · spread · energy · centroid · armsUp + /hive/cam/cluster'),
       ...boolSetting('oscCamPersons', 'osc per person', '/hive/cam/person per tracked person — id · x · y · depth · armsUp · crouch · energy'),
@@ -372,9 +391,12 @@ function buildPage(): void {
   refs.tonesButton.onclick = () => { void toggleTones(); };
   refs.queenClear.onclick = () => { void patchSettings({ queenUid: '' }); };
   refs.startButton.onclick = () => { void patchSettings({ running: !state?.settings.running }); };
+  refs.species.replaceChildren(...SPECIES.map((sp) => el('option', { value: sp, text: sp })));
+  refs.species.onchange = () => { void patchSettings({ species: refs.species.value as Species }); };
+  refs.camSelect.onchange = () => { void patchSettings({ camIndex: Number(refs.camSelect.value) }); };
   refs.resetButton.onclick = () => { if (confirm('reset the round? the queen is cleared, everyone re-spawns, and the swarm waits for start.')) void patchSettings({ reset: true } as unknown as Partial<Settings>); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
-  buildSettingsCard(hello);
+  buildSettingsCards(hello);
   buildProtocolCard();
   buildMuteGrid();
 
@@ -401,6 +423,7 @@ function buildPage(): void {
           el('div', { class: 'section-label', text: 'certificate warning — every phone, once' }),
           el('p', { class: 'note', text: 'iPhone: Show Details → visit this website. Android: Advanced → Proceed. Then Join (iPhone: Allow motion).' }),
         ),
+        refs.wallSettings,
         el('div', { class: 'card stack' },
           el('div', { class: 'section-label', text: 'debug sound on this mac' }),
           el('div', { class: 'row wrap' }, refs.tonesButton, el('span', { class: 'note', text: 'volume' }), refs.volume),
@@ -409,6 +432,7 @@ function buildPage(): void {
       ),
       el('div', { class: 'stack' },
         refs.camCard,
+        refs.signalSettings,
       ),
       el('div', { class: 'stack' },
         el('div', { class: 'card stack' },
@@ -417,7 +441,8 @@ function buildPage(): void {
           el('div', { class: 'row wrap' }, el('div', { class: 'grow' }, spec), label, add),
           refs.feedInfo,
         ),
-        refs.settingsCard,
+        refs.swarmSettings,
+        refs.oscSettings,
       ),
     ),
     el('div', { class: 'grid-3' },
@@ -472,20 +497,25 @@ function updateState(): void {
   refs.feedInfo.textContent = `${state.feedSubscribers} raw feed subscriber${state.feedSubscribers === 1 ? '' : 's'}`;
   const v = state.vision;
   refs.camStatus.textContent = v.connected
-    ? `connected · ${v.fps.toFixed(0)} fps · ${v.count} ${v.count === 1 ? 'person' : 'people'} · ${v.clusters} cluster${v.clusters === 1 ? '' : 's'} · spread ${v.spread.toFixed(2)} · energy ${v.energy.toFixed(2)}`
+    ? `connected · ${v.backend || '?'} · ${v.fps.toFixed(0)} fps · ${v.count} ${v.count === 1 ? 'person' : 'people'} · ${v.clusters} cluster${v.clusters === 1 ? '' : 's'} · spread ${v.spread.toFixed(2)} · energy ${v.energy.toFixed(2)}`
     : 'no camera process attached — run ./start.sh --vision in a second terminal';
   refs.camImage.classList.toggle('stale', !v.connected);
+  const options = [['-1', 'auto — first that opens'], ...v.cameras.map((n, i) => [String(i), `${i} · ${n}`])];
+  if (refs.camSelect.childElementCount !== options.length || [...refs.camSelect.options].some((o, i) => o.value !== options[i]![0])) {
+    refs.camSelect.replaceChildren(...options.map(([val, text]) => el('option', { value: val, text })));
+  }
+  if (document.activeElement !== refs.camSelect) refs.camSelect.value = String(state.settings.camIndex);
   const g = state.global;
   const cells: [string, string][] = [
     ['coherence', g.coherence.toFixed(2)], ['phase sync', g.phaseSync.toFixed(2)], ['tempo', `${g.tempo.toFixed(1)} Hz`],
     ['centroid', `${g.centroid.toFixed(1)} Hz`], ['entropy', g.entropy.toFixed(2)], ['dispersion', g.dispersion.toFixed(2)],
-    ['lean x/y', `${g.leanX.toFixed(1)} / ${g.leanY.toFixed(1)}`], ['onsets', `${g.onsets.toFixed(1)}/s`], ['crest', g.crest.toFixed(1)],
+    ['lean x', g.leanX.toFixed(1)], ['lean y', g.leanY.toFixed(1)], ['onsets', `${g.onsets.toFixed(1)}/s`], ['crest', g.crest.toFixed(1)],
   ];
   numbers(refs.globalRow, cells);
   const vf = state.vision;
   numbers(refs.camRow, [
     ['people', String(vf.count)], ['clusters', String(vf.clusters)], ['spread', vf.spread.toFixed(2)], ['energy', vf.energy.toFixed(2)],
-    ['flow', `${vf.flowX.toFixed(2)} / ${vf.flowY.toFixed(2)}`], ['turbulence', vf.turbulence.toFixed(2)], ['move sync', vf.moveSync.toFixed(2)],
+    ['flow x', vf.flowX.toFixed(2)], ['flow y', vf.flowY.toFixed(2)], ['turbulence', vf.turbulence.toFixed(2)], ['move sync', vf.moveSync.toFixed(2)],
     ['converge', vf.converge.toFixed(2)], ['nearest', vf.nearest.toFixed(2)], ['stillness', vf.stillness.toFixed(2)], ['occupancy', vf.occupancy.toFixed(2)],
   ]);
   const m = state.mix;

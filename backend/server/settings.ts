@@ -9,9 +9,9 @@
 //  immediately and are the same after a restart.
 //
 
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS } from '../shared/types';
+import { DEFAULT_SETTINGS, SETTINGS_LIMITS, SPECIES } from '../shared/types';
 import { MUTABLE } from '../shared/osc-schema';
-import type { Settings } from '../shared/types';
+import type { Settings, Species } from '../shared/types';
 import type { Store } from './store';
 import type { Registry } from './registry';
 import type { Swarm } from './swarm';
@@ -47,7 +47,7 @@ export class SettingsController {
   /** Validates and applies a partial update. Returns an error message, or null. */
   update(patch: Record<string, unknown>): string | null {
     const next: Settings = { ...this.store.settings };
-    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenAfter'] as const) {
+    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenAfter', 'camIndex'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];
@@ -73,6 +73,11 @@ export class SettingsController {
     // Reset: a new round. The queen is cleared, the wall re-spawns, the queen
     // keeper starts counting afresh, and the swarm waits for Start again.
     if (patch['reset']) { next.round = (next.round || 0) + 1; next.queenUid = ''; next.running = false; }
+    if (patch['species'] !== undefined) {
+      const sp = String(patch['species']);
+      if (!(SPECIES as readonly string[]).includes(sp)) return `species must be one of ${SPECIES.join(', ')}`;
+      next.species = sp as Species;
+    }
     if (patch['oscMute'] !== undefined) {
       const list = patch['oscMute'];
       if (!Array.isArray(list)) return 'oscMute must be a list of keys';
@@ -100,7 +105,7 @@ export class SettingsController {
     this.mix.setHz(s.swarmHz);
     this.mix.queenUid = s.queenUid;
     this.global.setHz(s.swarmHz);
-    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview });
+    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview, camera: s.camIndex });
     this.registry.condition.idleAfter = s.zeroIdleAfter;
     this.registry.condition.baselineTau = s.zeroTau;
     this.registry.condition.minCutoff = s.filterMinCutoff;

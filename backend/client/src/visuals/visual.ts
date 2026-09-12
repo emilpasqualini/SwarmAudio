@@ -8,7 +8,7 @@
 //  for every visual, whether it is dots, a flock, or a spectrogram.
 //
 
-import type { FeedMessage } from '../../../shared/types';
+import type { FeedMessage, Species } from '../../../shared/types';
 
 export interface Frame {
   ctx: CanvasRenderingContext2D;
@@ -30,6 +30,8 @@ export interface Frame {
   round: number;
   /** Camera coupling: whether bees are drawn toward the crowds the camera sees, and how hard (0..1). */
   coupling: { on: boolean; strength: number };
+  /** What to draw the swarm as (dashboard setting). */
+  species: Species;
 }
 
 export interface Visual {

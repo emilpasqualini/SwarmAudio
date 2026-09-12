@@ -130,6 +130,10 @@ export interface MixFeatures {
 
 export interface VisionStatus {
   connected: boolean;
+  /** Camera names as the camera process sees them, in index order. */
+  cameras: string[];
+  /** mps · coreml · cpu — what the model runs on. */
+  backend: string;
   fps: number;
   count: number;
   clusters: number;
@@ -184,11 +188,17 @@ export interface OscTarget {
 
 // --- runtime settings (editable on the dashboard, persisted) -----------------
 
+/** What the wall draws. Same mechanics for all; the queen is the big one. */
+export const SPECIES = ['bees', 'sheep'] as const;
+export type Species = typeof SPECIES[number];
+
 export interface Settings {
   /** false: the swarm is gathered but nothing starts — bees hover, no queen race, phones wait. Start/Pause on the dashboard. */
   running: boolean;
   /** Bumped by Reset: a new round — queen cleared, tallies cleared, bees re-spawned. */
   round: number;
+  /** What the wall draws. */
+  species: Species;
   /** Rate of /hive/swarm/* messages. */
   swarmHz: number;
   /** A device silent for this long has left. */
@@ -235,6 +245,8 @@ export interface Settings {
   camMirror: boolean;
   /** Camera: encode the annotated preview for the dashboard. */
   camPreview: boolean;
+  /** Camera: which one, by index; −1 = the first that opens. */
+  camIndex: number;
   /** Send /hive/global. */
   oscGlobal: boolean;
   /** Send /hive/mix (bees ⇄ camera). */
@@ -246,6 +258,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   running: false,
   round: 1,
+  species: 'bees',
   swarmHz: 30,
   deviceTimeoutMs: 3000,
   simulate: 0,
@@ -271,6 +284,7 @@ export const DEFAULT_SETTINGS: Settings = {
   camEps: 0.12,
   camMirror: true,
   camPreview: true,
+  camIndex: -1,
   oscGlobal: true,
   oscMix: true,
   oscMute: [],
@@ -287,6 +301,7 @@ export const SETTINGS_LIMITS = {
   queenAfter: { min: 1, max: 600 },
   camStrength: { min: 0, max: 1 },
   camEps: { min: 0.02, max: 0.5 },
+  camIndex: { min: -1, max: 7 },
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------

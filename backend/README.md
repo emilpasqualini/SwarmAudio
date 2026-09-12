@@ -131,8 +131,17 @@ phone and in the hive without being in the picture.
 The model (~6 MB) downloads into `vision/models/` on the first run — **do that
 once with internet before the venue**. macOS asks for camera access for the
 terminal you start it from; allow it (System Settings → Privacy & Security →
-Camera) — a process started from an app without that permission gets
-`not authorized to capture video`.
+Camera). If nothing opens, the script says why; `--list-cameras` prints what
+it sees, and the dashboard's *camera* menu picks one by name — the built-in
+FaceTime camera or an iPhone as **Continuity Camera** (it appears as
+"<name> Camera" while it is nearby and unlocked; camera indices are not stable,
+so pick by name).
+
+`--backend coreml` runs the model on the **Neural Engine** via Core ML
+(exported once from the `.pt`, ~1 min, no internet) instead of the GPU
+(`mps`, default). On an M1 Pro `mps` is faster (≈50 fps raw vs ≈25), but Core
+ML leaves the GPU to the wall on the projector — use it when both run on the
+same Mac and the wall stutters.
 
 What comes out, per processed frame (~25 fps on an M1 Pro):
 - **people** — tracker id, position, `depth` (box height: closer = bigger),
@@ -161,6 +170,164 @@ parameter while moving in front of the camera. Everything is in
 [docs/OSC.md](docs/OSC.md). A Steam Controller as meta-modulator (from the
 original idea) can hook into the same settings later.
 
+## Every feature, mathematically
+
+Notation: a phone $i$ delivers samples at $\approx 60$ Hz with acceleration
+$\mathbf{a}_i(t)\in\mathbb{R}^3$ (m/s², gravity included, sign-normalised so a
+flat phone reads $(0,0,+9.81)$) and rotation rate
+$\boldsymbol{\omega}_i(t)\in\mathbb{R}^3$ (°/s). $\Delta t$ is the time since
+the previous sample of that phone (clamped to $[1, 100]$ ms). All constants
+below are in [`server/condition.ts`](server/condition.ts),
+[`server/swarm.ts`](server/swarm.ts), [`server/global.ts`](server/global.ts),
+[`server/vision.ts`](server/vision.ts), [`server/mix.ts`](server/mix.ts).
+
+### Per phone — `/hive/sample` ([condition.ts](server/condition.ts))
+
+**Smoothing — One-Euro filter** (Casiez, Roussel & Vogel 2012), per axis.
+With cutoff $f_c$ the smoothing factor for a step $\Delta t$ is
+
+$$\alpha(f_c,\Delta t)=\frac{2\pi f_c\,\Delta t}{2\pi f_c\,\Delta t+1}.$$
+
+The derivative is smoothed with a fixed cutoff $f_d = 1$ Hz, and the signal
+cutoff rises with the speed of change:
+
+$$\dot{\hat a}_k = \dot{\hat a}_{k-1} + \alpha(f_d,\Delta t)\Big(\tfrac{a_k-\hat a_{k-1}}{\Delta t}-\dot{\hat a}_{k-1}\Big),\qquad
+f_c = f_{\min} + \beta\,|\dot{\hat a}_k|,\qquad
+\hat a_k = \hat a_{k-1} + \alpha(f_c,\Delta t)\,(a_k-\hat a_{k-1}).$$
+
+Dashboard: $f_{\min}$ = *filter: min cutoff* (1 Hz), $\beta$ = *filter: beta*
+(0.3 per m/s² per s). At rest the cutoff sits at $f_{\min}$ and jitter is gone;
+a flick raises it so the move arrives without lag.
+
+**Activity** — how much the phone is turning or being jolted, 0..1:
+
+$$r_k=\min\!\Big(1,\ \max\big(\tfrac{\|\boldsymbol\omega_k\|}{150},\ \tfrac{\|\mathbf a_k-\mathbf a_{k-1}\|}{6}\big)\Big),\qquad
+\mathrm{act}_k=\mathrm{act}_{k-1}+\big(1-e^{-\Delta t/\tau_a}\big)(r_k-\mathrm{act}_{k-1}),\ \tau_a=0.25\,\text{s}.$$
+
+**Idle** — seconds since activity last dropped below $0.06$:
+$\mathrm{idle}_k = \mathrm{idle}_{k-1}+\Delta t$ if $\mathrm{act}_k<0.06$, else $0$.
+
+**Adaptive zero and `rel`** — the baseline $\mathbf b$ starts at the first
+sample and only moves once the phone has rested for $T_{\text{idle}}$
+(*zero: rest before*, 1.2 s), sliding with time constant $\tau_z$ (*zero: slide
+time*, 2.5 s):
+
+$$\mathbf b_k=\mathbf b_{k-1}+\big(1-e^{-\Delta t/\tau_z}\big)(\hat{\mathbf a}_k-\mathbf b_{k-1})\ \text{ if } \mathrm{idle}_k>T_{\text{idle}},\qquad
+\mathbf{rel}_k=\hat{\mathbf a}_k-\mathbf b_k .$$
+
+So `rel` is zero whenever someone holds still — at any angle — and only
+*change* produces signal.
+
+**Turn** — rotation about the room's vertical, however the phone is held: the
+gyro projected onto the smoothed gravity direction,
+
+$$\mathrm{turn}_k=\frac{\boldsymbol\omega_k\cdot\hat{\mathbf a}_k}{\|\hat{\mathbf a}_k\|}\quad(\text{°/s, }+\text{ = counter-clockwise seen from above}).$$
+
+**Magnitudes** — $\|\mathbf a\|$, $\|\mathbf{rel}\|$, $\|\boldsymbol\omega\|$.
+
+### Whole swarm — `/hive/swarm` ([swarm.ts](server/swarm.ts)), at the swarm rate
+
+Over the $N$ phones with a latest sample:
+
+$$\mathrm{energy}=\frac1N\sum_i\big|\,\|\mathbf a_i\|-g\,\big|,\qquad
+\mathrm{motion}=\frac1N\sum_i\|\boldsymbol\omega_i\|,\qquad
+\mathrm{sync}=\frac{1}{1+c_v^2},\ \ c_v=\frac{\sigma(\|\boldsymbol\omega_i\|)}{\mathrm{motion}} .$$
+
+sync is 1 when everyone turns equally hard and → 0 when one moves and the
+rest are still.
+
+### Swarm meta-parameters — `/hive/global` ([global.ts](server/global.ts))
+
+Each phone keeps a ring buffer of the last 256 samples of $\mathbf{rel}$,
+$m=\|\mathbf{rel}\|$ and act; the swarm keeps a series
+$E_n=\frac1N\sum_i m_i$ sampled at the swarm rate $f_s$ (30 Hz; 128 values ≈ 4 s).
+Computed over the $N$ phones seen in the last 1.5 s.
+
+- **coherence** — mean pairwise Pearson correlation of the magnitude series
+  over the last $W=60$ samples (≈1 s):
+  $$\mathrm{coherence}=\frac{1}{\binom N2}\sum_{i<j}\rho\big(m_i[-W{:}],\,m_j[-W{:}]\big),\qquad
+  \rho(x,y)=\frac{\sum(x-\bar x)(y-\bar y)}{\sqrt{\sum(x-\bar x)^2\sum(y-\bar y)^2}} .$$
+- **phaseSync** — Kuramoto order parameter. Each phone's phase comes from the
+  last two upward zero crossings of $\mathrm{rel}_y$ (demeaned over 180
+  samples): with crossings at sample indices $c_1<c_2$ and period $P=c_2-c_1$,
+  $\varphi_i=2\pi\,(n-1-c_2)/P$. Then
+  $$R=\Big|\frac1M\sum_{i=1}^M e^{\,\mathrm{j}\varphi_i}\Big|\in[0,1]$$
+  over the $M\ge2$ phones that oscillate at all. 1 = in step.
+- **tempo** — dominant rhythm of the swarm. $E$ is demeaned and Hann-windowed;
+  its normalised autocorrelation
+  $r(\ell)=\sum_n E_nE_{n-\ell}\big/\sum_n E_n^2$ is searched for the strongest
+  *local* maximum with $\ell\in[f_s/6,\ f_s/0.5]$ (0.5–6 Hz);
+  $\mathrm{tempo}=f_s/\ell^\ast$ if $r(\ell^\ast)>0.3$, else 0.
+- **centroid** — spectral centroid of the same windowed series, 128-point FFT:
+  $$\mathrm{centroid}=\frac{\sum_{b=1}^{63}|X_b|^2\,\frac{b\,f_s}{128}}{\sum_{b=1}^{63}|X_b|^2}\ \text{Hz}.$$
+- **entropy** — how evenly activity is spread: with $p_i=\mathrm{act}_i/\sum_j\mathrm{act}_j$,
+  $$\mathrm{entropy}=-\frac{1}{\ln N}\sum_i p_i\ln p_i\in[0,1]$$
+  (1 = everyone equally active, 0 = one soloist; defined 1 when nobody moves and $N>1$).
+- **dispersion** — spread of the tilts, $\sqrt{\frac1N\sum_i\|\mathbf{rel}_i-\overline{\mathbf{rel}}\|^2}$ (m/s²).
+- **leanX, leanY** — $\overline{\mathrm{rel}_x}$, $\overline{\mathrm{rel}_y}$: where the room leans.
+- **onsets** — activity onsets (act crossing 0.06 upward) summed over phones
+  within the last 2 s, divided by 2 s.
+- **crest** — over the last $2f_s$ values of $E$: $\max E\,/\,\mathrm{rms}(E)$; ≈1 steady, high = spiky.
+
+### Camera — `/hive/cam` ([vision/hive_vision.py](vision/hive_vision.py), [vision.ts](server/vision.ts))
+
+Per frame, YOLO11n-pose gives each tracked person a box $(x_1,y_1,x_2,y_2)$
+and 17 keypoints. Coordinates are normalised by the frame size, $x$ mirrored
+when *mirror* is on. Per person $p$:
+
+- position $(x_p,y_p)$ = box centre; **depth** $=(y_2-y_1)/H$ (box height in
+  frame heights — closer = bigger);
+- **armsUp** = number of wrists whose $y$ is above the matching shoulder's (0–2);
+- **crouch** $=\mathrm{clip}\big(1-\tfrac{\text{knee}_y-\text{hip}_y}{0.8\,(\text{hip}_y-\text{shoulder}_y)},0,1\big)$;
+- **energy** — centroid speed in frame widths/s, $v=\|\Delta\mathbf p\|/\Delta t$,
+  squashed $\min(1,v/1.5)$ and smoothed with $\tau=0.3$ s.
+
+**Clusters** — DBSCAN with `min_samples = 1`, i.e. the connected components
+of the graph "closer than $\varepsilon$" ($\varepsilon$ = *cluster radius*, in
+frame widths, default 0.12): a chain of people each within $\varepsilon$ of the
+next is one group. Each cluster reports its size $n$, centroid and radius
+$\max_p\|\mathbf p-\bar{\mathbf p}\|$.
+
+Room numbers: **count**; **spread** = mean pairwise distance
+$\frac{1}{\binom N2}\sum_{p<q}\|\mathbf p-\mathbf q\|$; **energy** = mean person
+energy; **cx, cy** = centroid of everyone; **armsUp** = mean.
+
+Crowd motion (server, from consecutive frames; velocities $\mathbf v_p=\Delta\mathbf p/\Delta t$
+for people seen in both):
+
+- **flowX, flowY** $=\bar{\mathbf v}$; **turbulence** $=\sqrt{\frac1N\sum_p\|\mathbf v_p-\bar{\mathbf v}\|^2}$;
+- **moveSync** — mean pairwise cosine similarity $\frac{\mathbf v_p\cdot\mathbf v_q}{\|\mathbf v_p\|\|\mathbf v_q\|}$ over people with $\|\mathbf v\|>0.03$;
+- **converge** — $\frac{d}{dt}\mathrm{spread}$, exponentially smoothed ($\alpha=0.15$ per frame); negative = coming together;
+- **nearest** — $\frac1N\sum_p\min_{q\ne p}\|\mathbf p-\mathbf q\|$;
+- **stillness** — fraction of people with energy $<0.05$;
+- **occupancy** — fraction of a $4\times3$ grid over the frame with someone in it.
+
+### Bees ⇄ camera — `/hive/mix` ([mix.ts](server/mix.ts))
+
+Bee positions $\mathbf b_k$ (from the wall, $x$ divided by the aspect ratio so
+both pictures are $[0,1]^2$), headings $\theta_k$, and the camera's people,
+clusters and flow:
+
+- **distance** $=\|\bar{\mathbf b}-(c_x,c_y)\|$;
+- **beesInCrowd** — fraction of bees with $\|\mathbf b_k-\mathbf c_j\|\le r_j+0.04$ for some cluster $j$;
+- **queenInCrowd** — the same test for the queen's bee (0/1);
+- **covered** — fraction of people with a bee within 0.1;
+- **alignment** $=\cos\angle\big(\sum_k(\cos\theta_k,\sin\theta_k),\ (\mathrm{flowX},\mathrm{flowY})\big)$, 0 when the crowd barely moves;
+- **balance** $=\dfrac{\#\text{bees}}{\#\text{bees}+\#\text{people}}$.
+
+### The wall's flight model ([client/src/visuals/bees.ts](client/src/visuals/bees.ts))
+
+Not a feature, but it is what the phones see and `/hive/mix` reads. Each animal
+has a heading $\theta$ and a speed $s$ in world units (height = 1) per second:
+
+$$\dot\theta = \mathrm{turn}\cdot\tfrac{\pi}{180} + 2.2\,\mathrm{tilt}_x + \text{edge} + \text{separation} + \text{crowd},\qquad
+s\to 0.16\cdot\min\!\big(1,\max(1.4\,\mathrm{act},\ \mathrm{tilt}_y)\big)\ (\tau=0.4\,\text{s}),$$
+
+with $\mathrm{tilt}=\mathrm{clip}(\mathbf{rel}_{x,y}/4.9,-1,1)$. Edges push
+back with $(1-d/0.09)^2$ inside a 9 % margin; neighbours within 0.05 turn each
+other away; with *wall coupling* the nearest camera cluster turns the animal
+toward it with strength $\le$ the tilt's. Deterministic: same input, same path.
+
 ## The wall (`/wall`) and the queen
 
 Open `http://localhost:8080/wall` on the projector; double-click for
@@ -172,6 +339,11 @@ server's `rel` / `activity` / `turn`, so the wall shows what the OSC side hears.
 Movement is deliberately simple: tilt forward = go, tilt sideways = turn,
 moving about = go; tilting back stops. Until **start** on the dashboard the bees
 hover where they spawned.
+
+**Species** (dashboard): *bees* fly and beat their wings; *sheep* walk (legs
+swing with the distance covered), face left or right instead of turning, and
+when they rest they either lie down or graze — decided by lot each time. The
+queen sheep is the big black one with a white rim.
 
 One bee is the **queen** — larger, golden, a halo. The server decides who
 (`queenUid`, `/hive/queen` on OSC): crowned by hand on the dashboard, or, while
