@@ -156,6 +156,9 @@ mirrored when the dashboard says so.
 | `/hive/cam/centroid` | f x · f y | every camera frame | Where everyone is on average. |
 | `/hive/cam/flow` | f x · f y | every camera frame | Where the crowd drifts, frame widths per second. |
 | `/hive/cam/cluster` | i index · i n · f x · f y · f r · f share | every camera frame, per cluster | x, y centre and r radius in frame widths; n people in it; share = n / people in view. Largest group first, index 0..clusters−1. |
+| `/hive/cam/cluster/<i>/share` | f share | every camera frame, per cluster | By index, like /hive/dev/<slot>: the group's share of everyone in view. i = 0 is the largest group; `clusters` in the wide message is the bound; a vanished index gets one last 0. All shares add up to 1. |
+| `/hive/cam/cluster/<i>/n` | i n | every camera frame, per cluster | People in group i (0 once when it vanishes). |
+| `/hive/cam/cluster/<i>/pos` | f x · f y · f r | every camera frame, per cluster | Where group i is and how big, in frame widths. |
 | `/hive/cam/shares` | f × clusters | every camera frame | The groups' shares of everyone in view, largest first, as one list — its length is the number of groups; the values add up to 1. |
 | `/hive/cam/person` | i id · f x · f y · f depth · f armsUp · f crouch · f energy | every camera frame, per person (switchable) | id is the tracker's, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1. |
 | `/hive/cam/status` | i connected · f fps | every second | Whether the camera process is attached and how fast it runs. |
@@ -197,7 +200,12 @@ matched to a phone. At the swarm rate; each field also as `/hive/mix/<name>`.
 Every family has a switch on the dashboard (settings: *osc …*), and every
 small message has its own chip under *osc parameters* — off means not sent,
 which saves Wi-Fi traffic for whatever nobody patches. Mutable keys:
-`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `dev/queen`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `cam/flowEnergy`, `cam/flowCoherence`, `cam/flowCentroid`, `cam/beat`, `cam/densityMean`, `cam/largestShare`, `cam/shares`, `cam/grid`, `cam/gridflow`, `cam/density`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
+`dev/acc`, `dev/rel`, `dev/gyro`, `dev/activity`, `dev/mag`, `dev/turn`, `dev/queen`, `swarm/count`, `swarm/energy`, `swarm/motion`, `swarm/sync`, `global/coherence`, `global/phaseSync`, `global/tempo`, `global/centroid`, `global/entropy`, `global/dispersion`, `global/leanX`, `global/leanY`, `global/onsets`, `global/crest`, `cam/count`, `cam/clusters`, `cam/spread`, `cam/energy`, `cam/centroid`, `cam/armsUp`, `cam/flow`, `cam/turbulence`, `cam/moveSync`, `cam/converge`, `cam/nearest`, `cam/stillness`, `cam/occupancy`, `cam/cluster`, `cam/person`, `cam/status`, `cam/flowEnergy`, `cam/flowCoherence`, `cam/flowCentroid`, `cam/beat`, `cam/densityMean`, `cam/largestShare`, `cam/shares`, `cam/clusterIndexed`, `cam/grid`, `cam/gridflow`, `cam/density`, `mix/distance`, `mix/beesInCrowd`, `mix/queenInCrowd`, `mix/covered`, `mix/alignment`, `mix/balance`.
+
+**Groups by index.** `clusters` (in `/hive/cam`) says how many; then
+`/hive/cam/cluster/0/share`, `/hive/cam/cluster/1/share`, … are each group's
+share of everyone in view, largest first, adding up to 1 — route on the index
+as you would on a slot. When a group disappears its index sends a final 0.
 
 **REAPER** as a target: add this laptop's IP + port on the dashboard; in REAPER
 *Options → Preferences → Control/OSC/Web → Add → OSC*, mode *Receive only*, that

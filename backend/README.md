@@ -97,6 +97,7 @@ The protocol is documented in **[docs/OSC.md](docs/OSC.md)** — generated from
 /hive/global   s "global" · f t · i count · coherence · phaseSync · tempo · centroid · entropy · dispersion · leanX · leanY · onsets · crest
 /hive/cam      f t · i count · i clusters · spread · energy · cx · cy · armsUp · flowX · flowY · turbulence · moveSync · converge · nearest · stillness · occupancy
 /hive/cam/cluster · /hive/cam/shares · /hive/cam/person      groups (n, position, share of everyone), the shares as one list, tracked people (anonymous)
+/hive/cam/cluster/<i>/share · n · pos                        the same per group by index (0 = largest; bound = clusters; shares add up to 1)
 /hive/cam/grid · gridflow · density · beat · status          the field: 8×6 motion energy / flow / density, the crowd's rhythm, whether the camera runs
 /hive/mix      f t · i bees · i people · distance · beesInCrowd · queenInCrowd · covered · alignment · balance
 ```

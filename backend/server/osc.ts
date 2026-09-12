@@ -74,6 +74,9 @@ export class OscOut {
   private small(key: string, address: string, args: OscArg[]): Buffer | null {
     return this.muted.has(key) ? null : encodeMessage(address, args);
   }
+  /** How many indexed cluster messages went out last time, so vanished indices get a final 0. */
+  private clusterIndices = 0;
+
   /** Whether a camera process is attached, and its rate — repeated with the roster. */
   camStatus: { connected: boolean; fps: number } = { connected: false, fps: 0 };
 
@@ -202,6 +205,20 @@ export class OscOut {
       this.small('cam/density', '/hive/cam/density', f.density),
     ]) if (m) parts.push(m);
     if (!this.muted.has('cam/cluster')) f.clusters.forEach((c, i) => parts.push(encodeMessage('/hive/cam/cluster', [{ i }, { i: c.n }, c.x, c.y, c.r, c.share])));
+    if (!this.muted.has('cam/clusterIndexed')) {
+      // by index, like /hive/dev/<slot>: a patch routes on the number. Largest
+      // group first; `clusters` in the wide message is the bound. When a group
+      // vanishes its index gets one last share of 0 so nothing sticks.
+      f.clusters.forEach((c, i) => parts.push(
+        encodeMessage(`/hive/cam/cluster/${i}/share`, [c.share]),
+        encodeMessage(`/hive/cam/cluster/${i}/n`, [{ i: c.n }]),
+        encodeMessage(`/hive/cam/cluster/${i}/pos`, [c.x, c.y, c.r]),
+      ));
+      for (let i = f.clusters.length; i < this.clusterIndices; i++) {
+        parts.push(encodeMessage(`/hive/cam/cluster/${i}/share`, [0]), encodeMessage(`/hive/cam/cluster/${i}/n`, [{ i: 0 }]));
+      }
+      this.clusterIndices = f.clusters.length;
+    }
     if (this.flags.camPersons && !this.muted.has('cam/person')) {
       for (const p of f.people) parts.push(encodeMessage('/hive/cam/person', [{ i: p.id }, p.x, p.y, p.depth, p.armsUp, p.crouch, p.energy]));
     }
