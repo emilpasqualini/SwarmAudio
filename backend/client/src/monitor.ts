@@ -16,8 +16,8 @@ import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
-import { SETTINGS_LIMITS, SPECIES, wifiQrText } from '../../shared/types';
-import type { Species } from '../../shared/types';
+import { CAM_MODES, SETTINGS_LIMITS, SPECIES, wifiQrText } from '../../shared/types';
+import type { CamMode, Species } from '../../shared/types';
 import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, MIX_FIELDS, MUTABLE, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
@@ -111,6 +111,8 @@ const refs = {
   camImage: el('img', { class: 'cam-preview', alt: 'camera preview' }),
   camStatus: el('div', { class: 'note', text: 'no camera process attached' }),
   camSelect: el('select', {}),
+  camModeSelect: el('select', {}),
+  fieldRow: el('div', { class: 'global-row' }),
   camCard: el('div', { class: 'card stack' }),
   globalRow: el('div', { class: 'global-row' }),
   mixRow: el('div', { class: 'global-row' }),
@@ -183,8 +185,8 @@ function buildProtocolCard(): void {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps';
-type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal' | 'oscMix';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps' | 'camDetectFps';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal' | 'oscMix' | 'queenHidden';
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const textInputs = new Map<TextKey, HTMLInputElement>();
@@ -262,6 +264,7 @@ function buildSettingsCards(h: MonitorHello): void {
     el('span', { class: 'k', text: 'queen' }),
     el('span', { class: 'row' }, refs.queenNote, refs.queenClear),
     ...numberSetting('queenAfter', 'queen after', 's without a queen until the phone that moved most is crowned'),
+    ...boolSetting('queenHidden', 'hidden queen', 'game mode: no crown on the wall or the phones — not even hers. only this dashboard and OSC know; the room finds her by ear. the crown still passes on collision, silently'),
     el('span', { class: 'k', text: 'species' }),
     el('span', { class: 'row' }, refs.species, el('span', { class: 'hint', text: 'what the wall draws: bees or sheep — same mechanics, the queen is the big one' })),
   ).children);
@@ -358,6 +361,9 @@ function buildPage(): void {
     el('div', { class: 'settings' },
       el('span', { class: 'k', text: 'camera' }),
       el('span', { class: 'row' }, refs.camSelect, el('span', { class: 'hint', text: 'built-in, or an iPhone as Continuity Camera — the list comes from the camera process' })),
+      el('span', { class: 'k', text: 'mode' }),
+      el('span', { class: 'row' }, refs.camModeSelect, el('span', { class: 'hint', text: 'field: a full room — optical-flow grid every frame, people a few times a second, no ids. people: small rounds — full-rate tracking with ids' })),
+      ...numberSetting('camDetectFps', 'detect rate', 'field mode: how often per second the model looks for people (front rows)'),
       ...boolSetting('camPreview', 'preview', 'the annotated picture above, ~8 fps; off saves the camera process some work'),
       ...boolSetting('oscCam', 'osc camera', '/hive/cam (wide) + count · clusters · spread · energy · centroid · armsUp + /hive/cam/cluster'),
       ...boolSetting('oscCamPersons', 'osc per person', '/hive/cam/person per tracked person — id · x · y · depth · armsUp · crouch · energy'),
@@ -394,6 +400,8 @@ function buildPage(): void {
   refs.species.replaceChildren(...SPECIES.map((sp) => el('option', { value: sp, text: sp })));
   refs.species.onchange = () => { void patchSettings({ species: refs.species.value as Species }); };
   refs.camSelect.onchange = () => { void patchSettings({ camIndex: Number(refs.camSelect.value) }); };
+  refs.camModeSelect.replaceChildren(...CAM_MODES.map((m) => el('option', { value: m, text: m })));
+  refs.camModeSelect.onchange = () => { void patchSettings({ camMode: refs.camModeSelect.value as CamMode }); };
   refs.resetButton.onclick = () => { if (confirm('reset the round? the queen is cleared, everyone re-spawns, and the swarm waits for start.')) void patchSettings({ reset: true } as unknown as Partial<Settings>); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
   buildSettingsCards(hello);
@@ -451,7 +459,9 @@ function buildPage(): void {
         refs.globalRow,
       ),
       el('div', { class: 'card stack' },
-        el('div', { class: 'section-label', text: 'crowd motion — /hive/cam' }),
+        el('div', { class: 'section-label', text: 'crowd field — /hive/cam' }),
+        refs.fieldRow,
+        el('div', { class: 'section-label', text: 'crowd motion (people)' }),
         refs.camRow,
       ),
       el('div', { class: 'card stack' },
@@ -497,7 +507,7 @@ function updateState(): void {
   refs.feedInfo.textContent = `${state.feedSubscribers} raw feed subscriber${state.feedSubscribers === 1 ? '' : 's'}`;
   const v = state.vision;
   refs.camStatus.textContent = v.connected
-    ? `connected · ${v.backend || '?'} · ${v.fps.toFixed(0)} fps · ${v.count} ${v.count === 1 ? 'person' : 'people'} · ${v.clusters} cluster${v.clusters === 1 ? '' : 's'} · spread ${v.spread.toFixed(2)} · energy ${v.energy.toFixed(2)}`
+    ? `connected · ${v.mode} · ${v.backend || '?'} · ${v.fps.toFixed(0)} fps · ${v.count} ${v.count === 1 ? 'person' : 'people'} · ${v.clusters} cluster${v.clusters === 1 ? '' : 's'} · spread ${v.spread.toFixed(2)} · energy ${v.energy.toFixed(2)}`
     : 'no camera process attached — run ./start.sh --vision in a second terminal';
   refs.camImage.classList.toggle('stale', !v.connected);
   const options = [['-1', 'auto — first that opens'], ...v.cameras.map((n, i) => [String(i), `${i} · ${n}`])];
@@ -505,6 +515,11 @@ function updateState(): void {
     refs.camSelect.replaceChildren(...options.map(([val, text]) => el('option', { value: val, text })));
   }
   if (document.activeElement !== refs.camSelect) refs.camSelect.value = String(state.settings.camIndex);
+  if (document.activeElement !== refs.camModeSelect) refs.camModeSelect.value = state.settings.camMode;
+  numbers(refs.fieldRow, [
+    ['flow energy', v.flowEnergy.toFixed(2)], ['coherence', v.flowCoherence.toFixed(2)], ['centre x', v.flowCx.toFixed(2)], ['centre y', v.flowCy.toFixed(2)],
+    ['beat', v.beat > 0 ? `${v.beat.toFixed(1)} Hz` : '—'], ['beat strength', v.beatStrength.toFixed(2)], ['density', v.densityMean.toFixed(2)],
+  ]);
   const g = state.global;
   const cells: [string, string][] = [
     ['coherence', g.coherence.toFixed(2)], ['phase sync', g.phaseSync.toFixed(2)], ['tempo', `${g.tempo.toFixed(1)} Hz`],

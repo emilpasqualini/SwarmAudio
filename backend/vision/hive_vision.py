@@ -4,9 +4,14 @@ hive_vision.py — HIVE (camera)
 
 The room as the camera sees it, for the swarm.
 
-A webcam, YOLO11n-pose (people + 17 keypoints, tracked with BoT-SORT so an id
-stays with a person while they are in view), a tiny DBSCAN for groups, and a
-few room-level numbers. Every processed frame goes to the HIVE backend as one
+Two layers. The *field*: dense optical flow on a tiny grey copy of the frame,
+averaged into an 8×6 grid — where the crowd moves, how hard, how alike — which
+works for a hundred people at once, in the dark, overlapping, no model needed.
+And the *people*: YOLO11n-pose (boxes + 17 keypoints, tracked with BoT-SORT
+in people mode), a tiny DBSCAN for groups, a density grid, and a few
+room-level numbers. In field mode (the default, for a full room) the model
+runs at a few frames per second for the front rows only; in people mode
+(small rounds) at full rate with tracking. Every processed frame goes to the HIVE backend as one
 JSON message over a WebSocket (`ws://<mac>:8080/vision`), plus — when the
 dashboard wants it — a small annotated JPEG as a binary message so the
 dashboard can show what the camera sees. The backend does the rest: OSC
@@ -81,6 +86,99 @@ def dbscan(points: np.ndarray, eps: float) -> np.ndarray:
     return labels
 
 
+# --- the field: dense optical flow on an 8×6 grid ---------------------------------
+
+GRID_W, GRID_H = 8, 6
+FLOW_W, FLOW_H = 160, 90
+FLOW_FULL = 0.5          # frame widths per second that count as full energy
+
+
+class FlowField:
+    """Farneback optical flow between consecutive tiny grey frames, averaged per
+    cell. Cheap (~1 ms) and indifferent to how many people there are."""
+
+    def __init__(self):
+        self.prev: np.ndarray | None = None
+        self.grid = np.zeros((GRID_H, GRID_W, 3), dtype=float)   # vx, vy (frame widths/s), energy 0..1
+
+    def update(self, frame: np.ndarray, dt: float) -> dict:
+        grey = cv2.cvtColor(cv2.resize(frame, (FLOW_W, FLOW_H), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        if self.prev is None or dt <= 0:
+            self.prev = grey
+            return self.summary()
+        flow = cv2.calcOpticalFlowFarneback(self.prev, grey, None, 0.5, 2, 9, 2, 5, 1.1, 0)
+        self.prev = grey
+        # pixels per frame → frame widths per second
+        v = flow / (FLOW_W * dt)
+        ch, cw = FLOW_H // GRID_H, FLOW_W // GRID_W
+        cells = v[: ch * GRID_H, : cw * GRID_W].reshape(GRID_H, ch, GRID_W, cw, 2).mean(axis=(1, 3))
+        mag = np.linalg.norm(v[: ch * GRID_H, : cw * GRID_W], axis=2).reshape(GRID_H, ch, GRID_W, cw).mean(axis=(1, 3))
+        energy = np.clip(mag / FLOW_FULL, 0, 1)
+        # a little memory so the picture does not flicker with the camera's noise
+        target = np.dstack([cells[..., 0], cells[..., 1], energy])
+        self.grid += (target - self.grid) * min(1.0, dt / 0.15)
+        return self.summary()
+
+    def summary(self) -> dict:
+        g = self.grid
+        e = g[..., 2]
+        total = float(e.sum())
+        if total > 1e-6:
+            vx = float((g[..., 0] * e).sum() / total)
+            vy = float((g[..., 1] * e).sum() / total)
+            mean_mag = float((np.hypot(g[..., 0], g[..., 1]) * e).sum() / total)
+            coherence = float(math.hypot(vx, vy) / mean_mag) if mean_mag > 1e-6 else 0.0
+            ys, xs = np.mgrid[0:GRID_H, 0:GRID_W]
+            cx = float(((xs + 0.5) / GRID_W * e).sum() / total)
+            cy = float(((ys + 0.5) / GRID_H * e).sum() / total)
+        else:
+            coherence, cx, cy = 0.0, 0.5, 0.5
+        return {
+            "flow": [[round(float(c[0]), 3), round(float(c[1]), 3), round(float(c[2]), 3)] for row in g for c in row],
+            "flowEnergy": round(float(e.mean()), 4),
+            "flowCoherence": round(coherence, 4),
+            "flowCx": round(cx, 4),
+            "flowCy": round(cy, 4),
+        }
+
+    def draw(self, img: np.ndarray) -> None:
+        """Short arrows per cell on the preview, length with energy."""
+        h, w = img.shape[:2]
+        cw, ch = w / GRID_W, h / GRID_H
+        for j in range(GRID_H):
+            for i in range(GRID_W):
+                vx, vy, e = self.grid[j, i]
+                if e < 0.03:
+                    continue
+                cx, cy = int((i + 0.5) * cw), int((j + 0.5) * ch)
+                mag = math.hypot(vx, vy)
+                if mag > 1e-6:
+                    L = min(cw, ch) * 0.45 * e
+                    tip = (int(cx + vx / mag * L), int(cy + vy / mag * L))
+                    cv2.arrowedLine(img, (cx, cy), tip, (180, 184, 242), 1, cv2.LINE_AA, tipLength=0.4)
+                cv2.circle(img, (cx, cy), int(2 + 6 * e), (180, 184, 242), 1, cv2.LINE_AA)
+
+
+class Density:
+    """Where the detected people are, on the same 8×6 grid, with memory."""
+
+    def __init__(self):
+        self.grid = np.zeros((GRID_H, GRID_W), dtype=float)
+
+    def update(self, people: list[dict]) -> None:
+        hit = np.zeros_like(self.grid)
+        for p in people:
+            i = min(GRID_W - 1, int(p["x"] * GRID_W))
+            j = min(GRID_H - 1, int(p["y"] * GRID_H))
+            hit[j, i] += 1
+        self.grid += (hit - self.grid) * 0.2
+
+    def summary(self) -> dict:
+        m = float(self.grid.max())
+        norm = self.grid / m if m > 1e-6 else self.grid
+        return {"density": [round(float(v), 3) for v in norm.ravel()], "densityMean": round(float(norm.mean()), 4)}
+
+
 # --- per-person state -----------------------------------------------------------
 
 @dataclass
@@ -108,8 +206,8 @@ class Tracker:
         boxes = result.boxes
         kps = result.keypoints
         seen: set[int] = set()
-        if boxes is not None and boxes.id is not None:
-            ids = boxes.id.int().tolist()
+        if boxes is not None and len(boxes):
+            ids = boxes.id.int().tolist() if boxes.id is not None else list(range(1, len(boxes) + 1))
             xyxy = boxes.xyxy.tolist()
             kxy = kps.xy.tolist() if kps is not None else [None] * len(ids)
             kconf = kps.conf.tolist() if (kps is not None and kps.conf is not None) else [None] * len(ids)
@@ -213,6 +311,7 @@ class OscOut:
     def send(self, frame: dict) -> None:
         t = time.time() - self.t0
         self.sock.sendto(osc_message("/hive/cam", [t, frame["count"], len(frame["clusters"]), frame["spread"], frame["energy"], frame["cx"], frame["cy"], frame["armsUp"]]), self.addr)
+        self.sock.sendto(osc_message("/hive/cam/grid", [c[2] for c in frame["flow"]]), self.addr)
         for i, c in enumerate(frame["clusters"]):
             self.sock.sendto(osc_message("/hive/cam/cluster", [i, c["n"], c["x"], c["y"], c["r"]]), self.addr)
         for p in frame["people"]:
@@ -308,7 +407,10 @@ async def run(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     tracker = Tracker(eps=args.eps)
-    settings = {"preview": True, "mirror": bool(args.mirror), "camera": -1 if args.camera is None else int(args.camera), "reopen": False}
+    settings = {"preview": True, "mirror": bool(args.mirror), "camera": -1 if args.camera is None else int(args.camera), "reopen": False,
+                "mode": args.mode, "detectFps": args.detect_fps}
+    field = FlowField()
+    density = Density()
     osc = OscOut(args.osc) if args.osc else None
     ws = None
     ws_lock = asyncio.Lock()
@@ -334,12 +436,20 @@ async def run(args: argparse.Namespace) -> None:
                             tracker.eps = float(msg.get("eps", tracker.eps))
                             settings["mirror"] = bool(msg.get("mirror", settings["mirror"]))
                             settings["preview"] = bool(msg.get("preview", True))
+                            settings["mode"] = msg.get("mode", settings["mode"]) if msg.get("mode") in ("field", "people") else settings["mode"]
+                            settings["detectFps"] = float(msg.get("detectFps", settings["detectFps"]))
                             wanted = int(msg.get("camera", -1))
                             if args.source is None and wanted != settings["camera"]:
                                 settings["camera"] = wanted
                                 settings["reopen"] = True
-                            print(f"[vision] settings: eps={tracker.eps} mirror={settings['mirror']} preview={settings['preview']} camera={settings['camera']}", flush=True)
+                            print(f"[vision] settings: mode={settings['mode']} detect={settings['detectFps']}fps eps={tracker.eps} mirror={settings['mirror']} preview={settings['preview']} camera={settings['camera']}", flush=True)
             except Exception as err:  # noqa: BLE001 — any network trouble: wait and retry
+                code = getattr(getattr(err, "rcvd", None), "code", None) or getattr(err, "code", None)
+                if code == 4409 or "4409" in str(err):
+                    print("[vision] another camera process is attached to the server — waiting (stop the other one, or this one)", flush=True)
+                    ws = None
+                    await asyncio.sleep(10)
+                    continue
                 if ws is not None:
                     print(f"[vision] backend lost ({err.__class__.__name__}); retrying", flush=True)
                 ws = None
@@ -351,6 +461,11 @@ async def run(args: argparse.Namespace) -> None:
     period = 1.0 / args.fps
     preview_period = 1.0 / 8
     last_t = time.time()
+    last_detect = 0.0
+    frame_index = 0
+    last_people_t = time.time()
+    last_result = None
+    last_people: dict = {"type": "frame", "count": 0, "people": [], "clusters": [], "spread": 0.0, "energy": 0.0, "cx": 0.5, "cy": 0.5, "armsUp": 0.0}
     last_preview = 0.0
     fps_ema = 0.0
     n = 0
@@ -376,29 +491,56 @@ async def run(args: argparse.Namespace) -> None:
             frame = cv2.flip(frame, 1)
         h, w = frame.shape[:2]
 
-        def infer():
-            kw = {"device": device} if device else {}
-            return model.track(frame, persist=True, classes=[0], verbose=False, imgsz=args.imgsz, conf=0.35, tracker="botsort.yaml", **kw)
-        results = await loop.run_in_executor(None, infer)
-        result = results[0]
-
         now = time.time()
         dt = now - last_t
         last_t = now
         fps_ema = fps_ema * 0.9 + (1 / max(1e-3, dt)) * 0.1 if fps_ema else 1 / max(1e-3, dt)
 
-        out = tracker.update(result, w, h, dt)
+        # the field: every frame. A video file has its own clock — its frames
+        # are consecutive whatever our loop does — so use the file's frame time.
+        flow_dt = (1.0 / (cap.get(cv2.CAP_PROP_FPS) or 25.0)) if args.source is not None else dt
+        field_out = await loop.run_in_executor(None, field.update, frame, flow_dt)
+
+        # the people: every frame with tracking in people mode; at detectFps
+        # without tracking in field mode (ids are not the point with a crowd)
+        people_mode = settings["mode"] == "people"
+        due = people_mode or now - last_detect >= 1.0 / max(0.5, settings["detectFps"])
+        if due:
+            last_detect = now
+
+            def infer():
+                kw = {"device": device} if device else {}
+                if people_mode:
+                    return model.track(frame, persist=True, classes=[0], verbose=False, imgsz=args.imgsz, conf=0.35, tracker="botsort.yaml", **kw)
+                return model.predict(frame, classes=[0], verbose=False, imgsz=max(args.imgsz, 960), conf=0.3, **kw)
+            results = await loop.run_in_executor(None, infer)
+            result = results[0]
+            last_result = result
+            out = tracker.update(result, w, h, now - last_people_t)
+            last_people_t = now
+            density.update(out["people"])
+            last_people = out
+        else:
+            out = dict(last_people)
+        out.update(field_out)
+        out.update(density.summary())
+        out["mode"] = settings["mode"]
         out["fps"] = round(fps_ema, 1)
+        # the frame's own time, for rhythm on the server: a file's frames are
+        # evenly spaced in *its* clock, a camera's in wall-clock time
+        frame_index += 1
+        out["ft"] = round(frame_index / (cap.get(cv2.CAP_PROP_FPS) or 25.0), 4) if args.source is not None else round(now, 4)
         n += 1
 
         want_preview = (args.show or (ws is not None and settings["preview"])) and now - last_preview >= preview_period
         annotated = None
         if want_preview:
-            annotated = result.plot(line_width=2, font_size=6)
+            annotated = last_result.plot(img=frame.copy(), line_width=2, font_size=6) if last_result is not None else frame.copy()
+            field.draw(annotated)
             for c in out["clusters"]:
                 if c["n"] > 1:
                     cv2.circle(annotated, (int(c["x"] * w), int(c["y"] * h)), int(max(c["r"], 0.04) * w), (180, 184, 242), 1, cv2.LINE_AA)
-            cv2.putText(annotated, f"{out['count']} people  {len(out['clusters'])} clusters  spread {out['spread']:.2f}  {fps_ema:.0f} fps",
+            cv2.putText(annotated, f"{settings['mode']}  {out['count']} people  flow {out['flowEnergy']:.2f}  coherence {out['flowCoherence']:.2f}  {fps_ema:.0f} fps",
                         (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
             last_preview = now
 
@@ -421,7 +563,7 @@ async def run(args: argparse.Namespace) -> None:
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
         if n % 100 == 0:
-            print(f"[vision] {fps_ema:.0f} fps · {out['count']} people · {len(out['clusters'])} clusters · {'backend' if ws else 'no backend'}", flush=True)
+            print(f"[vision] {fps_ema:.0f} fps · {settings['mode']} · {out['count']} people · flow {out['flowEnergy']:.2f} · {'backend' if ws else 'no backend'}", flush=True)
 
         # keep to the requested rate
         elapsed = time.time() - t0
@@ -447,6 +589,9 @@ def main() -> None:
     ap.add_argument("--backend", default="mps", choices=["mps", "coreml", "cpu", "cuda"],
                     help="mps = Apple GPU (fastest here), coreml = Neural Engine (leaves the GPU to the wall), cpu, cuda")
     ap.add_argument("--list-cameras", action="store_true", help="print the cameras and exit")
+    ap.add_argument("--mode", default="field", choices=["field", "people"],
+                    help="field: optical-flow grid for a whole room, people detected a few times a second; people: full-rate tracking (small rounds)")
+    ap.add_argument("--detect-fps", type=float, default=5, help="field mode: how often the model looks for people")
     args = ap.parse_args()
     if args.list_cameras:
         for i, n in enumerate(list_cameras()):

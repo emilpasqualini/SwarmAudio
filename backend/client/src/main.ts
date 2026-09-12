@@ -308,7 +308,8 @@ function updateLive(): void {
     const me = swarmMap?.iAmQueen ?? false;
     const none = !swarmMap?.queen;
     const waiting = !swarmMap?.running;
-    queenLine.textContent = waiting ? t('waiting') : me ? t('queenYou') : none ? t('queenNone') : t('queenHint');
+    const hidden = swarmMap?.hidden ?? false;
+    queenLine.textContent = waiting ? t('waiting') : hidden ? t('queenHidden') : me ? t('queenYou') : none ? t('queenNone') : t('queenHint');
     queenLine.classList.toggle('you', me);
   }
   if (statusLine) {

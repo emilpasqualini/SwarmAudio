@@ -53,7 +53,8 @@ export function globalArgs(g: GlobalFeatures, t: number): OscArg[] {
 /** Arguments of `/hive/cam`. Order and meaning: CAM_FIELDS. Append only. */
 export function camArgs(f: VisionFrame, t: number): OscArg[] {
   return [t, { i: f.count }, { i: f.clusters.length }, f.spread, f.energy, f.cx, f.cy, f.armsUp,
-    f.flowX, f.flowY, f.turbulence, f.moveSync, f.converge, f.nearest, f.stillness, f.occupancy];
+    f.flowX, f.flowY, f.turbulence, f.moveSync, f.converge, f.nearest, f.stillness, f.occupancy,
+    f.flowEnergy, f.flowCoherence, f.flowCx, f.flowCy, f.beat, f.beatStrength, f.densityMean];
 }
 
 /** Arguments of `/hive/mix`. Order and meaning: MIX_FIELDS. Append only. */
@@ -189,6 +190,14 @@ export class OscOut {
       this.small('cam/nearest', '/hive/cam/nearest', [f.nearest]),
       this.small('cam/stillness', '/hive/cam/stillness', [f.stillness]),
       this.small('cam/occupancy', '/hive/cam/occupancy', [f.occupancy]),
+      this.small('cam/flowEnergy', '/hive/cam/flowEnergy', [f.flowEnergy]),
+      this.small('cam/flowCoherence', '/hive/cam/flowCoherence', [f.flowCoherence]),
+      this.small('cam/flowCentroid', '/hive/cam/flowCentroid', [f.flowCx, f.flowCy]),
+      this.small('cam/beat', '/hive/cam/beat', [f.beat, f.beatStrength]),
+      this.small('cam/densityMean', '/hive/cam/densityMean', [f.densityMean]),
+      this.small('cam/grid', '/hive/cam/grid', f.flow.map((c) => c[2])),
+      this.small('cam/gridflow', '/hive/cam/gridflow', f.flow.flatMap((c) => [c[0], c[1]])),
+      this.small('cam/density', '/hive/cam/density', f.density),
     ]) if (m) parts.push(m);
     if (!this.muted.has('cam/cluster')) f.clusters.forEach((c, i) => parts.push(encodeMessage('/hive/cam/cluster', [{ i }, { i: c.n }, c.x, c.y, c.r])));
     if (this.flags.camPersons && !this.muted.has('cam/person')) {

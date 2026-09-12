@@ -15,8 +15,8 @@
 
 export interface WallBee { uid: string; slot: number; x: number; y: number; h: number }
 
-/** The wire form phones receive: `{ v, q, r, b: [[uid, slot, x, y, h], …] }` — r: running. */
-export interface WallWire { v: number; q: string; r: boolean; b: [string, number, number, number, number][] }
+/** The wire form phones receive: `{ v, q, r, h, b: [[uid, slot, x, y, h], …] }` — r: running, h: the queen is hidden (then q is ''). */
+export interface WallWire { v: number; q: string; r: boolean; h: boolean; b: [string, number, number, number, number][] }
 
 export class WallState {
   private bees: WallBee[] = [];
@@ -25,6 +25,7 @@ export class WallState {
   version = 0;
   private queenUid = '';
   private running = false;
+  private hidden = false;
   private wire = '';
   private readonly listeners: ((text: string) => void)[] = [];
 
@@ -37,6 +38,12 @@ export class WallState {
   setRunning(running: boolean): void {
     if (running === this.running) return;
     this.running = running;
+    this.encode();
+  }
+
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
     this.encode();
   }
 
@@ -67,7 +74,7 @@ export class WallState {
 
   private encode(): void {
     this.version++;
-    const w: WallWire = { v: this.version, q: this.queenUid, r: this.running, b: this.bees.map((b) => [b.uid, b.slot, b.x, b.y, b.h]) };
+    const w: WallWire = { v: this.version, q: this.hidden ? '' : this.queenUid, r: this.running, h: this.hidden, b: this.bees.map((b) => [b.uid, b.slot, b.x, b.y, b.h]) };
     this.wire = JSON.stringify(w);
     for (const fn of this.listeners) fn(this.wire);
   }

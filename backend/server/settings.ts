@@ -9,9 +9,9 @@
 //  immediately and are the same after a restart.
 //
 
-import { DEFAULT_SETTINGS, SETTINGS_LIMITS, SPECIES } from '../shared/types';
+import { CAM_MODES, DEFAULT_SETTINGS, SETTINGS_LIMITS, SPECIES } from '../shared/types';
 import { MUTABLE } from '../shared/osc-schema';
-import type { Settings, Species } from '../shared/types';
+import type { CamMode, Settings, Species } from '../shared/types';
 import type { Store } from './store';
 import type { Registry } from './registry';
 import type { Swarm } from './swarm';
@@ -49,7 +49,7 @@ export class SettingsController {
   /** Validates and applies a partial update. Returns an error message, or null. */
   update(patch: Record<string, unknown>): string | null {
     const next: Settings = { ...this.store.settings };
-    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenAfter', 'camIndex'] as const) {
+    for (const key of ['swarmHz', 'deviceTimeoutMs', 'simulate', 'queenAfter', 'camIndex', 'camDetectFps'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];
@@ -63,7 +63,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n * 100) / 100;
     }
-    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal', 'oscMix'] as const) {
+    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode', 'running', 'oscCam', 'oscCamPersons', 'camCoupling', 'camMirror', 'camPreview', 'oscGlobal', 'oscMix', 'queenHidden'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
     for (const key of ['wifiSsid', 'wifiPassword'] as const) {
@@ -75,6 +75,11 @@ export class SettingsController {
     // Reset: a new round. The queen is cleared, the wall re-spawns, the queen
     // keeper starts counting afresh, and the swarm waits for Start again.
     if (patch['reset']) { next.round = (next.round || 0) + 1; next.queenUid = ''; next.running = false; }
+    if (patch['camMode'] !== undefined) {
+      const m = String(patch['camMode']);
+      if (!(CAM_MODES as readonly string[]).includes(m)) return `camMode must be one of ${CAM_MODES.join(', ')}`;
+      next.camMode = m as CamMode;
+    }
     if (patch['species'] !== undefined) {
       const sp = String(patch['species']);
       if (!(SPECIES as readonly string[]).includes(sp)) return `species must be one of ${SPECIES.join(', ')}`;
@@ -108,7 +113,7 @@ export class SettingsController {
     this.mix.queenUid = s.queenUid;
     this.feed.queenUid = s.queenUid;
     this.global.setHz(s.swarmHz);
-    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview, camera: s.camIndex });
+    this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview, camera: s.camIndex, mode: s.camMode, detectFps: s.camDetectFps });
     this.registry.condition.idleAfter = s.zeroIdleAfter;
     this.registry.condition.baselineTau = s.zeroTau;
     this.registry.condition.minCutoff = s.filterMinCutoff;

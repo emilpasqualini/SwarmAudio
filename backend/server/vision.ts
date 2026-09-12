@@ -17,12 +17,18 @@
 
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
-import type { VisionCluster, VisionFrame, VisionPerson, VisionStatus } from '../shared/types';
+import { CAM_GRID } from '../shared/types';
+import type { CamMode, VisionCluster, VisionFrame, VisionPerson, VisionStatus } from '../shared/types';
+import { tempoOf, windowed } from './dsp';
 
 const STALE_MS = 2000;
 const MAX_PREVIEW = 512 * 1024;
 
-export interface VisionSettings { eps: number; mirror: boolean; preview: boolean; camera: number }
+export interface VisionSettings { eps: number; mirror: boolean; preview: boolean; camera: number; mode: CamMode; detectFps: number }
+
+const CELLS = CAM_GRID.w * CAM_GRID.h;
+const BEAT_SERIES = 128;
+const BEAT_HZ = 20;    // the field energy is resampled onto this even grid before looking for a rhythm
 
 const num = (v: unknown, lo = -1e9, hi = 1e9): number => {
   const n = Number(v);
@@ -35,7 +41,13 @@ export class VisionIn {
   private latest: VisionFrame | null = null;
   private lastAt = 0;
   private preview: Buffer | null = null;
-  private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true, camera: -1 };
+  private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true, camera: -1, mode: 'field', detectFps: 5 };
+  /** flowEnergy over the last ~6 s, resampled to BEAT_HZ, for the beat. */
+  private readonly beatSeries = new Float64Array(BEAT_SERIES);
+  private beatHead = 0;
+  private beatFilled = 0;
+  private beatLast: { ft: number; e: number } | null = null;
+  private beatGridT = 0;
   private cameras: string[] = [];
   private backend = '';
   /** Last position per tracker id, for velocities. */
@@ -47,8 +59,13 @@ export class VisionIn {
 
   constructor(private readonly log: (line: string) => void) {
     this.wss.on('connection', (socket) => {
-      // One camera at a time; a newer connection replaces the old one.
-      if (this.client && this.client !== socket) this.client.close(1000, 'replaced');
+      // One camera at a time. While one is alive and sending, a second one is
+      // turned away (otherwise two processes would keep replacing each other
+      // and the dashboard flicker between them); a dead one is replaced.
+      if (this.client && this.client !== socket) {
+        if (this.connected) { socket.close(4409, 'another camera process is attached'); return; }
+        this.client.close(1000, 'replaced');
+      }
       this.client = socket;
       this.log('camera attached');
       socket.send(JSON.stringify({ type: 'settings', ...this.settings }));
@@ -69,6 +86,7 @@ export class VisionIn {
         const frame = this.parse(raw);
         if (!frame) return;
         this.motion(frame);
+        this.beat(frame);
         this.latest = frame;
         this.lastAt = Date.now();
         for (const fn of this.frameListeners) fn(frame);
@@ -98,14 +116,48 @@ export class VisionIn {
       energy: f?.energy ?? 0,
       flowX: f?.flowX ?? 0, flowY: f?.flowY ?? 0, turbulence: f?.turbulence ?? 0, moveSync: f?.moveSync ?? 0,
       converge: f?.converge ?? 0, nearest: f?.nearest ?? 0, stillness: f?.stillness ?? 0, occupancy: f?.occupancy ?? 0,
+      flowEnergy: f?.flowEnergy ?? 0, flowCoherence: f?.flowCoherence ?? 0, flowCx: f?.flowCx ?? 0.5, flowCy: f?.flowCy ?? 0.5,
+      beat: f?.beat ?? 0, beatStrength: f?.beatStrength ?? 0, densityMean: f?.densityMean ?? 0, mode: f?.mode ?? this.settings.mode,
     };
   }
 
   /** Cluster radius, mirror and preview flag; forwarded to the camera process. */
   configure(s: VisionSettings): void {
-    if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview && s.camera === this.settings.camera) return;
+    if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview && s.camera === this.settings.camera && s.mode === this.settings.mode && s.detectFps === this.settings.detectFps) return;
     this.settings = { ...s };
     if (this.client?.readyState === this.client?.OPEN) this.client?.send(JSON.stringify({ type: 'settings', ...this.settings }));
+  }
+
+  /**
+   * The crowd's rhythm: autocorrelation of the field energy over the last few
+   * seconds. Frames arrive unevenly (the model stalls the camera loop now and
+   * then), so the energy is first put onto an even 20 Hz grid by linear
+   * interpolation using the frames' own timestamps.
+   */
+  private beat(f: VisionFrame): void {
+    const cur = { ft: f.ft, e: f.flowEnergy };
+    if (!this.beatLast || cur.ft <= this.beatLast.ft || cur.ft - this.beatLast.ft > 2) {
+      this.beatLast = cur;
+      this.beatGridT = cur.ft;
+      return;
+    }
+    while (this.beatGridT + 1 / BEAT_HZ <= cur.ft) {
+      this.beatGridT += 1 / BEAT_HZ;
+      const k = (this.beatGridT - this.beatLast.ft) / (cur.ft - this.beatLast.ft);
+      this.beatSeries[this.beatHead] = this.beatLast.e + (cur.e - this.beatLast.e) * k;
+      this.beatHead = (this.beatHead + 1) % BEAT_SERIES;
+      this.beatFilled = Math.min(BEAT_SERIES, this.beatFilled + 1);
+    }
+    this.beatLast = cur;
+    const n = this.beatFilled;
+    if (n < 32) return;
+    const x = new Float64Array(n);
+    for (let j = 0; j < n; j++) x[j] = this.beatSeries[(this.beatHead - n + j + BEAT_SERIES) % BEAT_SERIES]!;
+    const { y, power } = windowed(x, n);
+    if (power < 1e-6) return;
+    const t = tempoOf(y, BEAT_HZ);
+    f.beat = t.hz;
+    f.beatStrength = t.strength;
   }
 
   /** The crowd's motion: needs the previous frame, so it lives here rather than in Python. */
@@ -172,8 +224,15 @@ export class VisionIn {
         n: Math.round(num(c['n'], 0, 64)), x: num(c['x'], 0, 1), y: num(c['y'], 0, 1), r: num(c['r'], 0, 1),
       }))
       : [];
+    const flowRaw = Array.isArray(raw['flow']) && (raw['flow'] as unknown[]).length === CELLS ? (raw['flow'] as unknown[]) : null;
+    const flow: [number, number, number][] = flowRaw
+      ? flowRaw.map((c) => Array.isArray(c) ? [num(c[0], -5, 5), num(c[1], -5, 5), num(c[2], 0, 1)] as [number, number, number] : [0, 0, 0])
+      : Array.from({ length: CELLS }, () => [0, 0, 0] as [number, number, number]);
+    const densRaw = Array.isArray(raw['density']) && (raw['density'] as unknown[]).length === CELLS ? (raw['density'] as unknown[]) : null;
+    const density = densRaw ? densRaw.map((v) => num(v, 0, 1)) : new Array<number>(CELLS).fill(0);
     return {
       t: Date.now(),
+      ft: num(raw['ft'], 0, 1e12),
       fps: num(raw['fps'], 0, 240),
       count: people.length,
       clusters,
@@ -184,6 +243,12 @@ export class VisionIn {
       cy: num(raw['cy'], 0, 1),
       armsUp: num(raw['armsUp'], 0, 2),
       flowX: 0, flowY: 0, turbulence: 0, moveSync: 0, converge: 0, nearest: 0, stillness: 0, occupancy: 0,
+      flow, density,
+      flowEnergy: num(raw['flowEnergy'], 0, 1), flowCoherence: num(raw['flowCoherence'], 0, 1),
+      flowCx: num(raw['flowCx'], 0, 1), flowCy: num(raw['flowCy'], 0, 1),
+      beat: 0, beatStrength: 0,
+      densityMean: num(raw['densityMean'], 0, 1),
+      mode: raw['mode'] === 'people' ? 'people' : 'field',
     };
   }
 }

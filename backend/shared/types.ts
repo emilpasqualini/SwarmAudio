@@ -91,6 +91,8 @@ export interface VisionCluster { n: number; x: number; y: number; r: number }
 
 export interface VisionFrame {
   t: number;
+  /** The frame's own timestamp, seconds (the camera's clock or the file's), for rhythm. */
+  ft: number;
   fps: number;
   count: number;
   clusters: VisionCluster[];
@@ -113,7 +115,25 @@ export interface VisionFrame {
   nearest: number;
   stillness: number;
   occupancy: number;
+  /** The field (v4): optical flow on an 8×6 grid, row-major from the top-left — [vx, vy, energy] per cell. */
+  flow: [number, number, number][];
+  /** Density of detected people on the same grid, 0..1 of the fullest cell. */
+  density: number[];
+  flowEnergy: number;
+  flowCoherence: number;
+  flowCx: number;
+  flowCy: number;
+  /** The crowd's rhythm from the field energy (server): Hz and how clear it is. */
+  beat: number;
+  beatStrength: number;
+  densityMean: number;
+  /** field or people — what the camera process is doing. */
+  mode: CamMode;
 }
+
+export const CAM_MODES = ['field', 'people'] as const;
+export type CamMode = typeof CAM_MODES[number];
+export const CAM_GRID = { w: 8, h: 6 } as const;
 
 /** Where the bees and the camera's people meet (see MIX_FIELDS). */
 export interface MixFeatures {
@@ -147,6 +167,14 @@ export interface VisionStatus {
   nearest: number;
   stillness: number;
   occupancy: number;
+  flowEnergy: number;
+  flowCoherence: number;
+  flowCx: number;
+  flowCy: number;
+  beat: number;
+  beatStrength: number;
+  densityMean: number;
+  mode: CamMode;
 }
 
 // --- swarm meta-parameters (/hive/global) ---------------------------------------
@@ -225,6 +253,8 @@ export interface Settings {
   queenUid: string;
   /** Seconds without a queen after which the device that moved most becomes one. */
   queenAfter: number;
+  /** Game mode: the queen is hidden — no crown on the wall or the phones (only the dashboard and OSC know); the room has to find her by ear. */
+  queenHidden: boolean;
   /** Wi-Fi the phones must be on; the wall and the dashboard show it as a QR code. '' = none. */
   wifiSsid: string;
   wifiPassword: string;
@@ -247,6 +277,10 @@ export interface Settings {
   camPreview: boolean;
   /** Camera: which one, by index; −1 = the first that opens. */
   camIndex: number;
+  /** Camera: field (a full room: optical-flow grid, people a few times a second) or people (small rounds: full-rate tracking). */
+  camMode: CamMode;
+  /** Camera, field mode: how often the model looks for people, Hz. */
+  camDetectFps: number;
   /** Send /hive/global. */
   oscGlobal: boolean;
   /** Send /hive/mix (bees ⇄ camera). */
@@ -272,6 +306,7 @@ export const DEFAULT_SETTINGS: Settings = {
   filterBeta: 0.3,
   queenUid: '',
   queenAfter: 20,
+  queenHidden: false,
   wifiSsid: 'Emilio Algieba',      // Emil's iPhone hotspot — the default network at the venue
   wifiPassword: 'jointhehive',
   wifiHotspot: true,
@@ -285,6 +320,8 @@ export const DEFAULT_SETTINGS: Settings = {
   camMirror: true,
   camPreview: true,
   camIndex: -1,
+  camMode: 'field',
+  camDetectFps: 5,
   oscGlobal: true,
   oscMix: true,
   oscMute: [],
@@ -302,6 +339,7 @@ export const SETTINGS_LIMITS = {
   camStrength: { min: 0, max: 1 },
   camEps: { min: 0.02, max: 0.5 },
   camIndex: { min: -1, max: 7 },
+  camDetectFps: { min: 1, max: 30 },
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------

@@ -12,7 +12,7 @@
 //  against version 1 keeps working when version 2 adds columns at the end.
 //
 
-export const OSC_SCHEMA_VERSION = 3;
+export const OSC_SCHEMA_VERSION = 4;
 
 export type OscType = 'i' | 'f' | 's';
 
@@ -93,6 +93,14 @@ export const CAM_FIELDS: Field[] = [
   { name: 'nearest',  type: 'f', unit: '0..1', description: 'Mean distance to one\'s nearest neighbour, in frame widths. Small = close contact.' },
   { name: 'stillness', type: 'f', unit: '0..1', description: 'Fraction of people who are standing still.' },
   { name: 'occupancy', type: 'f', unit: '0..1', description: 'Fraction of a 4×3 grid over the picture that has someone in it — how much of the room is in use.' },
+  // --- v4: the field — optical flow over the whole picture, for a room full of people ---
+  { name: 'flowEnergy',    type: 'f', unit: '0..1', description: 'How much the picture moves, averaged over the 8×6 flow grid (1 ≈ everything moving half a frame width per second). Works for a hundred people, in the dark, overlapping.' },
+  { name: 'flowCoherence', type: 'f', unit: '0..1', description: '|energy-weighted mean flow vector| / mean |flow|: 1 = the whole crowd moves the same way, 0 = every which way.' },
+  { name: 'flowCx',        type: 'f', unit: '0..1', description: 'Energy-weighted centre of the motion, left→right.' },
+  { name: 'flowCy',        type: 'f', unit: '0..1', description: 'Energy-weighted centre of the motion, top→bottom.' },
+  { name: 'beat',          type: 'f', unit: 'Hz',   description: 'The crowd\'s rhythm: strongest local autocorrelation peak of flowEnergy over ~4 s, 0.5–6 Hz (clapping, bouncing, swaying). 0 when nothing repeats.' },
+  { name: 'beatStrength',  type: 'f', unit: '0..1', description: 'How clear that rhythm is (the autocorrelation peak).' },
+  { name: 'densityMean',   type: 'f', unit: '0..1', description: 'Mean of the density grid (detected people per cell, relative to the fullest cell).' },
 ];
 
 /** `/hive/mix` — where the bees on the wall and the people the camera sees meet (v3). */
@@ -117,7 +125,8 @@ export const MUTABLE: { family: string; key: string }[] = [
   ...['acc', 'rel', 'gyro', 'activity', 'mag', 'turn', 'queen'].map((k) => ({ family: 'dev', key: `dev/${k}` })),
   ...['count', 'energy', 'motion', 'sync'].map((k) => ({ family: 'swarm', key: `swarm/${k}` })),
   ...['coherence', 'phaseSync', 'tempo', 'centroid', 'entropy', 'dispersion', 'leanX', 'leanY', 'onsets', 'crest'].map((k) => ({ family: 'global', key: `global/${k}` })),
-  ...['count', 'clusters', 'spread', 'energy', 'centroid', 'armsUp', 'flow', 'turbulence', 'moveSync', 'converge', 'nearest', 'stillness', 'occupancy', 'cluster', 'person', 'status'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
+  ...['count', 'clusters', 'spread', 'energy', 'centroid', 'armsUp', 'flow', 'turbulence', 'moveSync', 'converge', 'nearest', 'stillness', 'occupancy', 'cluster', 'person', 'status',
+    'flowEnergy', 'flowCoherence', 'flowCentroid', 'beat', 'densityMean', 'grid', 'gridflow', 'density'].map((k) => ({ family: 'cam', key: `cam/${k}` })),
   ...['distance', 'beesInCrowd', 'queenInCrowd', 'covered', 'alignment', 'balance'].map((k) => ({ family: 'mix', key: `mix/${k}` })),
 ];
 
@@ -146,6 +155,11 @@ export const CAM_MESSAGES: MessageDoc[] = [
   { address: '/hive/cam/cluster', args: 'i index · i n · f x · f y · f r',                                     when: 'every camera frame, per cluster', description: 'x, y centre and r radius in frame widths; n people in it. Index 0..clusters−1.' },
   { address: '/hive/cam/person',  args: 'i id · f x · f y · f depth · f armsUp · f crouch · f energy',        when: 'every camera frame, per person (switchable)', description: 'id is the tracker\'s, stable while the person stays in view — not a phone, never matched to one. depth = box height / frame height (closer = bigger). armsUp 0..2 wrists above shoulders, crouch 0..1.' },
   { address: '/hive/cam/status',  args: 'i connected · f fps',                                                   when: 'every second',                    description: 'Whether the camera process is attached and how fast it runs.' },
+  { address: '/hive/cam/grid',     args: 'f × 48',                                                               when: 'every camera frame',              description: 'Motion energy per cell of the 8×6 flow grid, row-major from the top-left (v4).' },
+  { address: '/hive/cam/gridflow', args: 'f × 96',                                                               when: 'every camera frame',              description: 'Flow per cell, vx vy pairs in frame widths per second, same order (v4).' },
+  { address: '/hive/cam/density',  args: 'f × 48',                                                               when: 'every camera frame',              description: 'Detected people per cell, 0..1 of the fullest cell, same order (v4).' },
+  { address: '/hive/cam/beat',     args: 'f hz · f strength',                                                    when: 'every camera frame',              description: 'The crowd\'s rhythm (v4).' },
+  { address: '/hive/cam/flowCentroid', args: 'f x · f y',                                                        when: 'every camera frame',              description: 'Where the motion is (v4).' },
 ];
 
 /** Per-field addresses — the same data as /hive/sample, one small message each. */

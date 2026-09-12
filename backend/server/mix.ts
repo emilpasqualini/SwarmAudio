@@ -10,6 +10,7 @@
 //  the first handles for playing the two against each other.
 //
 
+import { CAM_GRID } from '../shared/types';
 import type { MixFeatures } from '../shared/types';
 import type { WallState } from './wall';
 import type { VisionIn } from './vision';
@@ -46,9 +47,17 @@ export class Mix {
     let bx = 0, by = 0, hx = 0, hy = 0;
     for (const b of bees) { bx += b.x; by += b.y; hx += Math.cos(b.h); hy += Math.sin(b.h); }
     bx /= m.bees; by /= m.bees;
-    m.distance = Math.hypot(bx - f.cx, by - f.cy);
-
-    const inCrowd = (x: number, y: number): boolean => f.clusters.some((c) => Math.hypot(c.x - x, c.y - y) <= c.r + MARGIN);
+    // In field mode the crowd is where the motion is, and "in the crowd" means
+    // over a cell that moves; in people mode it is the clusters.
+    const field = f.mode === 'field';
+    m.distance = field ? Math.hypot(bx - f.flowCx, by - f.flowCy) : Math.hypot(bx - f.cx, by - f.cy);
+    const cellEnergy = (x: number, y: number): number => {
+      const i = Math.min(CAM_GRID.w - 1, Math.floor(x * CAM_GRID.w)), j = Math.min(CAM_GRID.h - 1, Math.floor(y * CAM_GRID.h));
+      return f.flow[j * CAM_GRID.w + i]?.[2] ?? 0;
+    };
+    const inCrowd = (x: number, y: number): boolean => field
+      ? cellEnergy(x, y) > 0.3
+      : f.clusters.some((c) => Math.hypot(c.x - x, c.y - y) <= c.r + MARGIN);
     let inside = 0;
     for (const b of bees) if (inCrowd(b.x, b.y)) inside++;
     m.beesInCrowd = inside / m.bees;
@@ -59,8 +68,15 @@ export class Mix {
     for (const p of f.people) if (bees.some((b) => Math.hypot(b.x - p.x, b.y - p.y) <= TOUCH)) covered++;
     m.covered = covered / m.people;
 
-    const flow = Math.hypot(f.flowX, f.flowY), head = Math.hypot(hx, hy);
-    m.alignment = flow > 0.02 && head > 1e-3 ? (hx * f.flowX + hy * f.flowY) / (head * flow) : 0;
+    // the crowd's direction: mean flow of the field (energy-weighted) in field mode, people's velocities otherwise
+    let fx = f.flowX, fy = f.flowY;
+    if (field) {
+      let wsum = 0; fx = 0; fy = 0;
+      for (const [vx, vy, e] of f.flow) { fx += vx * e; fy += vy * e; wsum += e; }
+      if (wsum > 1e-6) { fx /= wsum; fy /= wsum; }
+    }
+    const flow = Math.hypot(fx, fy), head = Math.hypot(hx, hy);
+    m.alignment = flow > 0.02 && head > 1e-3 ? (hx * fx + hy * fy) / (head * flow) : 0;
     return m;
   }
 

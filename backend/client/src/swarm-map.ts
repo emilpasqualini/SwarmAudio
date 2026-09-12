@@ -15,7 +15,7 @@
 import { slotColour } from './dom';
 
 /** `{ v, q, b: [[uid, slot, x, y, h], …] }` — see server/wall.ts. */
-interface Wire { v: number; q: string; r: boolean; b: [string, number, number, number, number][] }
+interface Wire { v: number; q: string; r: boolean; h: boolean; b: [string, number, number, number, number][] }
 
 const DELAY_MS = 200;           // render this far behind the newest snapshot
 const QUEEN_COLOUR = '#f2c14e';
@@ -36,6 +36,8 @@ export class SwarmMap {
   private queenUid = '';
   /** false until the dashboard's Start — and before the first snapshot. */
   running = false;
+  /** game mode: the queen is hidden, nobody's phone says who she is */
+  hidden = false;
   private readonly tracks = new Map<string, Track>();
   private raf = 0;
   private version = 0;
@@ -60,6 +62,7 @@ export class SwarmMap {
     this.version = w.v;
     this.queenUid = w.q;
     this.running = Boolean(w.r);
+    this.hidden = Boolean(w.h);
     const now = performance.now();
     for (const [uid, slot, x, y, h] of w.b) {
       const t = this.tracks.get(uid);

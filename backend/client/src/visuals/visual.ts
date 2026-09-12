@@ -32,6 +32,8 @@ export interface Frame {
   coupling: { on: boolean; strength: number };
   /** What to draw the swarm as (dashboard setting). */
   species: Species;
+  /** Game mode: draw the queen like everyone else; the crown still passes, silently. */
+  queenHidden: boolean;
 }
 
 export interface Visual {

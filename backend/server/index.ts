@@ -56,6 +56,7 @@ const swarm = new Swarm(registry, store.settings.swarmHz);
 const global = new Global(registry, store.settings.swarmHz);
 const vision = new VisionIn(log);
 const wall = new WallState(store.settings.queenUid, store.settings.running);
+wall.setHidden(store.settings.queenHidden);
 const mix = new Mix(wall, vision, store.settings.swarmHz);
 const feed = new Feed(registry, swarm, global, vision, mix);
 const settings = new SettingsController(store, registry, swarm, osc, global, vision, mix, feed);
@@ -234,6 +235,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     let lastRunning = settings.current.running;
     settings.onChange(() => {
       wall.setRunning(settings.current.running);
+      wall.setHidden(settings.current.queenHidden);
       if (settings.current.running !== lastRunning) { lastRunning = settings.current.running; log(lastRunning ? 'started' : 'paused'); }
       const uid = settings.current.queenUid;
       if (uid === lastQueen) return;
