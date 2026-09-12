@@ -38,6 +38,9 @@ function connectMonitor(): void {
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data as string) as MonitorMessage;
     if (msg.type === 'hello') {
+      // The server restarted since this page loaded: its client build may
+      // have changed too, and a stale page against a new server misbehaves.
+      if (hello && hello.bootId !== msg.bootId) { location.reload(); return; }
       const rebuild = !hello;
       hello = msg;
       if (rebuild) buildPage();
@@ -189,7 +192,7 @@ function updateSettings(s: Settings): void {
     if (document.activeElement !== input) input.value = String(s[key]);
   }
   for (const [key, button] of boolButtons) {
-    const on = s[key];
+    const on = Boolean(s[key]);
     button.textContent = on ? 'on' : 'off';
     button.classList.toggle('on', on);
     button.classList.toggle('quiet', !on);

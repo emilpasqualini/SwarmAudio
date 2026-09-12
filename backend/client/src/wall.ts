@@ -78,7 +78,10 @@ function connectMonitor(): void {
   const ws = new WebSocket(`${wsScheme}://${location.host}/monitor-ws`);
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data as string) as MonitorMessage;
-    if (msg.type === 'hello') { hello = msg; drawQr(); }
+    if (msg.type === 'hello') {
+      if (hello && hello.bootId !== msg.bootId) { location.reload(); return; }
+      hello = msg; drawQr();
+    }
     else { state = msg; drawState(); }
   };
   ws.onclose = () => setTimeout(connectMonitor, 1500);
