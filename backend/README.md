@@ -318,21 +318,23 @@ clusters and flow:
 ### The wall's flight model ([client/src/visuals/bees.ts](client/src/visuals/bees.ts))
 
 Not a feature, but it is what the phones see and `/hive/mix` reads. The phone
-is a joystick: $\mathbf j=\mathrm{clip}(\mathbf{rel}_{x,y}/4.9,-1,1)$, with the
-$y$ axis flipped so tipping the top edge away means *up* on the wall, rotated
-by the yaw the phone has accumulated, $\psi=\int\mathrm{turn}\,dt$ (turn
-around and your "forward" turns with you). Each animal has a heading $\theta$
-and a speed $s$ in world units (height = 1) per second:
+is a two-axis joystick, pitch and roll, nothing else:
+$\mathbf j=\mathrm{clip}(\mathbf{rel}_{x,y}/4.9,-1,1)$ with the $y$ axis
+flipped, so tipping the top edge away means *up* on the wall and tipping right
+means right. Each animal has a heading $\theta$ (only for drawing — it follows
+where it goes) and a speed $s$ in world units (height = 1) per second:
 
-$$\dot\theta=\dot\psi+7\,\mathrm{wrap}(\angle\mathbf j-\theta)\,[\|\mathbf j\|>0.08]+\text{edge}+\text{separation}+\text{crowd},\qquad
-s\to 0.24\cdot\begin{cases}\|\mathbf j\| & \|\mathbf j\|>0.08\\ \min(1,1.4\,\mathrm{act}) & \text{flat}\end{cases}\ (\tau=0.25\,\text{s}).$$
+$$\dot\theta=7\,\mathrm{wrap}(\angle\mathbf j-\theta)\,[\|\mathbf j\|>0.08]+\text{edge}+\text{separation}+\text{crowd},\qquad
+s\to 0.24\cdot\|\mathbf j\|\,[\|\mathbf j\|>0.08]\ (\tau=0.25\,\text{s}).$$
 
 Edges push back with $(1-d/0.09)^2$ inside a 9 % margin; neighbours within
 0.05 turn each other away; with *wall coupling* the nearest camera cluster
 turns the animal toward it with strength $\le$ the tilt's. Deterministic: same
-input, same path. Note the adaptive zero: a tilt *held* still for a couple of
-seconds becomes the new zero and the animal slows to a halt — only change
-moves it.
+input, same path. Turning and shaking do not move the animal — they are still
+in the data for the sound. Note the adaptive zero: a tilt *held* still becomes
+the new zero after *zero: rest before* + *zero: slide time* seconds and the
+animal slows to a halt; raise those two on the dashboard if people want to
+lean for longer.
 
 ## The wall (`/wall`) and the queen
 
