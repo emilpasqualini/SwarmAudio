@@ -20,12 +20,19 @@ export type Status = 'connecting' | 'open' | 'reconnecting' | 'down';
 export interface TransportEvents {
   onStatus: (status: Status, mode: Mode) => void;
   onLog: (line: string) => void;
+<<<<<<< HEAD
   /** The server's reply on the same link: where the bees are on the wall (JSON text). */
   onWall?: (text: string) => void;
 }
 
 const WS_OPEN_TIMEOUT = 1500;
 const MAX_INFLIGHT_POSTS = 3;
+=======
+}
+
+const WS_OPEN_TIMEOUT = 1500;
+const MAX_INFLIGHT_POSTS = 2;
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 const RECONNECT_MS = [500, 1000, 2000, 3000, 5000];
 
 export class Transport {
@@ -76,17 +83,25 @@ export class Transport {
       body: frame,
       headers: { 'Content-Type': 'application/octet-stream' },
       cache: 'no-store',
+<<<<<<< HEAD
       // No `keepalive: true` here: that flag is for requests that must outlive
       // the page, and Safari serves those on a slower path. The leave beacon
       // is the one request that needs it.
     }).then(async (res) => {
+=======
+      keepalive: true,
+    }).then((res) => {
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
       this.inflight--;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       this.sent++;
       this.postFailures = 0;
       if (this.status !== 'open') this.setStatus('open');
+<<<<<<< HEAD
       // 200 carries the wall snapshot; 204 means nothing new since the last one.
       if (res.status === 200 && this.events.onWall) this.events.onWall(await res.text());
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     }).catch((err: Error) => {
       this.inflight--;
       this.postFailures++;
@@ -133,8 +148,11 @@ export class Transport {
       this.events.onLog('WebSocket open');
       this.setStatus('open');
     };
+<<<<<<< HEAD
     // Text down the socket is the wall snapshot; the phone never receives binary.
     ws.onmessage = (e) => { if (typeof e.data === 'string') this.events.onWall?.(e.data); };
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     ws.onerror = () => { /* onclose follows with the useful information */ };
     ws.onclose = (e) => {
       clearTimeout(openTimeout);

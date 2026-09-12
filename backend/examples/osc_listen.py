@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Print the OSC that HIVE sends — a stand-in for Pd/Max when checking a laptop
+<<<<<<< HEAD
 receives the stream.  No dependencies.  Protocol: docs/OSC.md.
+=======
+receives the stream.  No dependencies.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
     python3 examples/osc_listen.py 9001
 
@@ -58,9 +62,13 @@ def main():
         buf, (host, _) = sock.recvfrom(4096)
         for address, args in decode(buf):
             counts[address] = counts.get(address, 0) + 1
+<<<<<<< HEAD
             streaming = address in ("/hive/sample", "/hive/swarm", "/hive/roster", "/hive/schema") or \
                 address.endswith(("/acc", "/rel", "/gyro", "/activity", "/mag", "/energy", "/motion", "/sync", "/count"))
             if not streaming:
+=======
+            if not address.endswith(("/acc", "/gyro", "/mag", "/energy", "/motion", "/sync", "/count")):
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
                 print(address, *(f"{a:.3f}" if isinstance(a, float) else a for a in args), f"  from {host}")
         now = time.time()
         if now - last > 1:

@@ -25,14 +25,21 @@ const MIME: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
+<<<<<<< HEAD
 /** Pretty routes → files. `/monitor` is the laptop's dashboard, `/wall` the projection. */
+=======
+/** Pretty routes → files. `/monitor` is the dashboard, everything else the phone app. */
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 const ROUTES: Record<string, string> = {
   '/': 'index.html',
   '/index.html': 'index.html',
   '/monitor': 'monitor.html',
   '/monitor.html': 'monitor.html',
+<<<<<<< HEAD
   '/wall': 'wall.html',
   '/wall.html': 'wall.html',
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 };
 
 export function serveStatic(clientDir: string) {

@@ -16,8 +16,12 @@ import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
+<<<<<<< HEAD
 import { SETTINGS_LIMITS, wifiQrText } from '../../shared/types';
 import { EVENT_MESSAGES, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
+=======
+import { SETTINGS_LIMITS } from '../../shared/types';
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 const root = document.getElementById('app')!;
 const log = new ActivityLog(document.getElementById('log')!);
@@ -38,9 +42,12 @@ function connectMonitor(): void {
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data as string) as MonitorMessage;
     if (msg.type === 'hello') {
+<<<<<<< HEAD
       // The server restarted since this page loaded: its client build may
       // have changed too, and a stale page against a new server misbehaves.
       if (hello && hello.bootId !== msg.bootId) { location.reload(); return; }
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
       const rebuild = !hello;
       hello = msg;
       if (rebuild) buildPage();
@@ -83,6 +90,7 @@ const refs = {
   feedInfo: el('p', { class: 'note' }),
   tbody: el('tbody'),
   tonesButton: el('button', { class: 'pill quiet', text: 'Test tones: off' }),
+<<<<<<< HEAD
   queenNote: el('span', { class: 'note', text: 'none' }),
   startButton: el('button', { class: 'pill', text: 'start' }),
   resetButton: el('button', { class: 'pill quiet', text: 'reset' }),
@@ -148,6 +156,18 @@ type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotsp
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const textInputs = new Map<TextKey, HTMLInputElement>();
+=======
+  volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
+  settingsCard: el('div', { class: 'card stack' }),
+};
+
+// --- settings card: inputs are built once and only refreshed while not focused,
+//     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
+
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate';
+type BoolKey = 'oscPerSample' | 'oscMag' | 'oscSwarm';
+const numInputs = new Map<NumKey, HTMLInputElement>();
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
 
 async function patchSettings(patch: Partial<Settings>): Promise<void> {
@@ -155,9 +175,15 @@ async function patchSettings(patch: Partial<Settings>): Promise<void> {
   if (res.ok) log.step(`settings: ${Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ')}`);
 }
 
+<<<<<<< HEAD
 function numberSetting(key: NumKey, label: string, hint: string, step = 1): HTMLElement[] {
   const { min, max } = SETTINGS_LIMITS[key];
   const input = el('input', { type: 'number', min, max, step });
+=======
+function numberSetting(key: NumKey, label: string, hint: string): HTMLElement[] {
+  const { min, max } = SETTINGS_LIMITS[key];
+  const input = el('input', { type: 'number', min, max, step: 1 });
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   const commit = (): void => {
     const v = Number(input.value);
     if (!Number.isFinite(v) || v === state?.settings[key]) return;
@@ -169,6 +195,7 @@ function numberSetting(key: NumKey, label: string, hint: string, step = 1): HTML
   return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, input, el('span', { class: 'hint', text: hint }))];
 }
 
+<<<<<<< HEAD
 function textSetting(key: TextKey, label: string, hint: string, placeholder = ''): HTMLElement[] {
   const input = el('input', { type: 'text', placeholder, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
   const commit = (): void => { if (input.value !== state?.settings[key]) void patchSettings({ [key]: input.value }); };
@@ -178,6 +205,8 @@ function textSetting(key: TextKey, label: string, hint: string, placeholder = ''
   return [el('span', { class: 'k', text: label }), el('span', { class: 'row' }, input, el('span', { class: 'hint', text: hint }))];
 }
 
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 function boolSetting(key: BoolKey, label: string, hint: string): HTMLElement[] {
   const button = el('button', { class: 'pill small quiet', text: 'off' });
   button.onclick = () => { void patchSettings({ [key]: !state?.settings[key] }); };
@@ -192,6 +221,7 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('simulate', 'fake phones', '0 = off; virtual devices through the real pipeline'),
       ...numberSetting('swarmHz', 'swarm rate', 'Hz for /hive/swarm/*'),
       ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
+<<<<<<< HEAD
       el('span', { class: 'k', text: 'queen' }),
       el('span', { class: 'row' }, refs.queenNote, refs.queenClear),
       ...numberSetting('queenAfter', 'queen after', 's without a queen until the phone that moved most is crowned'),
@@ -208,6 +238,11 @@ function buildSettingsCard(h: MonitorHello): void {
       ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag · turn'),
       ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
       ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm (wide) + /hive/swarm/count · energy · motion · sync'),
+=======
+      ...boolSetting('oscPerSample', 'osc acc + gyro', '/hive/dev/<n>/acc and /gyro per sample'),
+      ...boolSetting('oscMag', 'osc magnitudes', '/hive/dev/<n>/mag per sample'),
+      ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm/count, energy, motion, sync'),
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
       el('span', { class: 'k', text: 'ports' }),
       el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
       el('span', { class: 'k', text: 'saved to' }),
@@ -216,6 +251,7 @@ function buildSettingsCard(h: MonitorHello): void {
   );
 }
 
+<<<<<<< HEAD
 let wifiDrawn = '';
 function drawWifiQr(s: Settings): void {
   const text = s.wifiSsid ? wifiQrText(s.wifiSsid, s.wifiPassword) : '';
@@ -241,11 +277,18 @@ function updateSettings(s: Settings): void {
   const queen = state?.devices.find((d) => d.uid === s.queenUid);
   refs.queenNote.textContent = s.queenUid ? `${queen ? `#${queen.slot} ${queen.name || ''}`.trim() : 'away'} · ${s.queenUid} — ♛ in the table crowns, a bee flying into her takes over` : 'none yet — the phone that moves most is crowned';
   refs.queenClear.hidden = !s.queenUid;
+=======
+function updateSettings(s: Settings): void {
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   for (const [key, input] of numInputs) {
     if (document.activeElement !== input) input.value = String(s[key]);
   }
   for (const [key, button] of boolButtons) {
+<<<<<<< HEAD
     const on = Boolean(s[key]);
+=======
+    const on = s[key];
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     button.textContent = on ? 'on' : 'off';
     button.classList.toggle('on', on);
     button.classList.toggle('quiet', !on);
@@ -258,7 +301,11 @@ function drawAddresses(): void {
   if (!hello) return;
   const canvas = document.createElement('canvas');
   refs.qr.replaceChildren(canvas);
+<<<<<<< HEAD
   QRCode.toCanvas(canvas, hello.qrUrl, { width: 220, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
+=======
+  QRCode.toCanvas(canvas, hello.qrUrl, { width: 320, margin: 0, color: { dark: '#000000', light: '#ffffff' } })
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     .catch((err: Error) => log.fail(`QR: ${err.message}`));
   refs.urls.replaceChildren(
     ...hello.urls.map((u) => el('div', { class: 'url', text: u })),
@@ -270,6 +317,7 @@ function buildPage(): void {
   if (!hello) return;
 
   drawAddresses();
+<<<<<<< HEAD
   refs.wifiCard.replaceChildren(
     el('details', {},
       el('summary', { class: 'section-label', text: 'wi-fi QR code (as on the wall)' }),
@@ -277,6 +325,8 @@ function buildPage(): void {
       refs.wifiName,
     ),
   );
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
   // Add-target form.
   const spec = el('input', { type: 'text', placeholder: 'host:port  e.g. 192.168.2.14:9001', autocomplete: 'off' });
@@ -291,27 +341,36 @@ function buildPage(): void {
   spec.onkeydown = (e) => { if (e.key === 'Enter') void submit(); };
 
   refs.tonesButton.onclick = () => { void toggleTones(); };
+<<<<<<< HEAD
   refs.queenClear.onclick = () => { void patchSettings({ queenUid: '' }); };
   refs.startButton.onclick = () => { void patchSettings({ running: !state?.settings.running }); };
   refs.resetButton.onclick = () => { if (confirm('reset the round? the queen is cleared, everyone re-spawns, and the swarm waits for start.')) void patchSettings({ reset: true } as unknown as Partial<Settings>); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
   buildSettingsCard(hello);
   buildProtocolCard();
+=======
+  refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
+  buildSettingsCard(hello);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
   root.replaceChildren(el('main', { class: 'wide stack' },
     el('div', { class: 'row between wrap' },
       el('h1', { text: 'HIVE · monitor' }),
       el('div', { class: 'row wrap' }, refs.count, refs.energy, refs.motion, refs.sync),
     ),
+<<<<<<< HEAD
     el('div', { class: 'card row wrap between' },
       el('div', { class: 'row wrap' }, refs.startButton, refs.resetButton, refs.roundNote),
       el('span', { class: 'note', text: 'people can join while paused — bees hover, no queen race, phones say "waiting". start lets it all go; reset clears the queen and re-spawns everyone.' }),
     ),
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     el('div', { class: 'grid-2' },
       el('div', { class: 'card stack' },
         el('div', { class: 'section-label', text: 'scan to join' }),
         refs.qr,
         refs.urls,
+<<<<<<< HEAD
         refs.wifiCard,
         el('div', { class: 'section-label', text: 'for the projector' }),
         el('p', { class: 'note' },
@@ -319,6 +378,19 @@ function buildPage(): void {
           ' on the projector — big QR, join steps, live visuals. Double-click for fullscreen, h hides the panels.'),
         el('div', { class: 'section-label', text: 'certificate warning — every phone, once' }),
         el('p', { class: 'note', text: 'iPhone: Show Details → visit this website. Android: Advanced → Proceed. Then Join (iPhone: Allow motion).' }),
+=======
+        el('div', { class: 'section-label', text: 'certificate warning — tap through once' }),
+        el('div', { class: 'grid-2' },
+          el('div', {}, el('strong', { text: 'iPhone (Safari)' }), el('ol', { class: 'steps' },
+            el('li', { text: '“This Connection Is Not Private” → Show Details' }),
+            el('li', { text: 'tap “visit this website”, then “Visit Website”' }),
+            el('li', { text: 'tap Join → Allow motion access' }))),
+          el('div', {}, el('strong', { text: 'Android (Chrome)' }), el('ol', { class: 'steps' },
+            el('li', { text: '“Your connection is not private” → Advanced' }),
+            el('li', { text: 'tap “Proceed to … (unsafe)”' }),
+            el('li', { text: 'tap Join' }))),
+        ),
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
       ),
       el('div', { class: 'stack' },
         el('div', { class: 'card stack' },
@@ -335,13 +407,21 @@ function buildPage(): void {
         ),
       ),
     ),
+<<<<<<< HEAD
     refs.protocolCard,
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     el('div', { class: 'card' },
       el('div', { class: 'section-label', text: 'swarm' }),
       el('div', { class: 'table-wrap' }, el('table', {},
         el('thead', {}, el('tr', {},
+<<<<<<< HEAD
           el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'uid' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
           el('th', { text: 'hz' }), el('th', { text: 'rel x y z · turn x y z' }), el('th', { text: '|rel|' }), el('th', { text: '|turn|' }), el('th', { text: 'act' }), el('th'),
+=======
+          el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
+          el('th', { text: 'hz' }), el('th', { text: 'acc x y z · gyro x y z' }), el('th', { text: '|acc|' }), el('th', { text: '|gyro|' }), el('th'),
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
         )),
         refs.tbody,
       )),
@@ -397,6 +477,7 @@ function renderDevices(devices: DeviceInfo[]): void {
       const bars = Array.from({ length: 6 }, (_, i) => signedBar(i >= 3 ? 'gyro' : ''));
       const cells = [
         el('td', { class: 'num' }, el('span', { class: 'row' }, el('span', { class: 'dot' }), `${d.slot}`)),
+<<<<<<< HEAD
         el('td'), el('td', { class: 'num' }), el('td'), el('td'), el('td', { class: 'num' }),
         el('td', {}, el('div', { class: 'mini' }, ...bars)),
         el('td', { class: 'num' }), el('td', { class: 'num' }), el('td', { class: 'num' }),
@@ -406,6 +487,15 @@ function renderDevices(devices: DeviceInfo[]): void {
           const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
           kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
           return el('span', { class: 'row' }, crown, kick);
+=======
+        el('td'), el('td'), el('td'), el('td', { class: 'num' }),
+        el('td', {}, el('div', { class: 'mini' }, ...bars)),
+        el('td', { class: 'num' }), el('td', { class: 'num' }),
+        el('td', {}, (() => {
+          const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
+          kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
+          return kick;
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
         })()),
       ];
       const tr = el('tr', {}, ...cells);
@@ -415,6 +505,7 @@ function renderDevices(devices: DeviceInfo[]): void {
     }
     const c = row.cells;
     c[1]!.textContent = d.name || '—';
+<<<<<<< HEAD
     c[2]!.textContent = d.uid;
     c[3]!.textContent = d.platform;
     c[4]!.textContent = d.transport.toUpperCase();
@@ -429,6 +520,16 @@ function renderDevices(devices: DeviceInfo[]): void {
       c[7]!.textContent = Math.hypot(...rel).toFixed(1);
       c[8]!.textContent = Math.hypot(...gyro).toFixed(0);
       c[9]!.textContent = activity.toFixed(2);
+=======
+    c[2]!.textContent = d.platform;
+    c[3]!.textContent = d.transport.toUpperCase();
+    c[4]!.textContent = d.hz.toFixed(0);
+    if (d.last) {
+      const { acc, gyro } = d.last;
+      [...acc, ...gyro].forEach((v, i) => setSigned(row!.bars[i]!, v, i < 3 ? 20 : 360));
+      c[6]!.textContent = Math.hypot(...acc).toFixed(1);
+      c[7]!.textContent = Math.hypot(...gyro).toFixed(0);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     }
   }
   for (const [slot, row] of rows) if (!seen.has(slot)) { row.tr.remove(); rows.delete(slot); }

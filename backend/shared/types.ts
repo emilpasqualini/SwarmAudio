@@ -20,8 +20,11 @@ export const PLATFORM_FROM_CODE: Platform[] = ['unknown', 'ios', 'android', 'oth
 export interface Sample {
   /** Slot of the device that produced it (1..N). */
   slot: number;
+<<<<<<< HEAD
   /** Stable 8-character id of the phone. */
   uid: string;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   /** Server arrival time, ms since epoch. */
   t: number;
   /** Client-side timestamp, ms since epoch (client clock). */
@@ -30,6 +33,7 @@ export interface Sample {
   acc: [number, number, number];
   /** Rotation rate, °/s, around x (beta), y (gamma), z (alpha). */
   gyro: [number, number, number];
+<<<<<<< HEAD
   /** One-Euro-smoothed acceleration relative to the device's adaptive zero (m/s²); settles to 0 at rest. */
   rel: [number, number, number];
   /** 0..1, how much the phone is turning or being jolted right now. */
@@ -38,14 +42,19 @@ export interface Sample {
   idle: number;
   /** Rotation rate about the vertical (gravity) axis, °/s; positive = counter-clockwise seen from above. */
   turn: number;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 }
 
 export type Transport = 'ws' | 'post';
 
 export interface DeviceInfo {
   id: string;
+<<<<<<< HEAD
   /** First 8 characters of `id`; what the OSC side sees. */
   uid: string;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   slot: number;
   name: string;
   platform: Platform;
@@ -82,16 +91,20 @@ export interface OscTarget {
 // --- runtime settings (editable on the dashboard, persisted) -----------------
 
 export interface Settings {
+<<<<<<< HEAD
   /** false: the swarm is gathered but nothing starts — bees hover, no queen race, phones wait. Start/Pause on the dashboard. */
   running: boolean;
   /** Bumped by Reset: a new round — queen cleared, tallies cleared, bees re-spawned. */
   round: number;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   /** Rate of /hive/swarm/* messages. */
   swarmHz: number;
   /** A device silent for this long has left. */
   deviceTimeoutMs: number;
   /** Fake phones; 0 = off. */
   simulate: number;
+<<<<<<< HEAD
   /** Send the wide /hive/sample message per sample. */
   oscWide: boolean;
   /** Send the per-field /hive/dev/<slot>/* messages per sample. */
@@ -143,17 +156,37 @@ export const DEFAULT_SETTINGS: Settings = {
   wifiHotspot: true,
   wallWifiCode: true,
   wallJoinCode: true,
+=======
+  /** Send /hive/dev/<slot>/acc, /gyro per sample. */
+  oscPerSample: boolean;
+  /** Send /hive/dev/<slot>/mag per sample. */
+  oscMag: boolean;
+  /** Send /hive/swarm/* at swarmHz. */
+  oscSwarm: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  swarmHz: 30,
+  deviceTimeoutMs: 3000,
+  simulate: 0,
+  oscPerSample: true,
+  oscMag: true,
+  oscSwarm: true,
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 };
 
 export const SETTINGS_LIMITS = {
   swarmHz: { min: 1, max: 120 },
   deviceTimeoutMs: { min: 500, max: 60_000 },
   simulate: { min: 0, max: 50 },
+<<<<<<< HEAD
   zeroIdleAfter: { min: 0, max: 30 },
   zeroTau: { min: 0.1, max: 60 },
   filterMinCutoff: { min: 0.05, max: 30 },
   filterBeta: { min: 0, max: 5 },
   queenAfter: { min: 1, max: 600 },
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 } as const;
 
 // --- monitor feed (server → dashboard, JSON at ~10 Hz) ----------------------
@@ -166,8 +199,11 @@ export interface MonitorHello {
   httpsPort: number;
   /** Where hive.config.json lives, for the dashboard to say so. */
   configFile: string;
+<<<<<<< HEAD
   /** Changes on every server start; a page that sees a new one reloads itself. */
   bootId: string;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 }
 
 export interface MonitorState {
@@ -185,6 +221,7 @@ export type MonitorMessage = MonitorHello | MonitorState;
 // --- raw feed (server → teammates' code, JSON) --------------------------------
 
 export type FeedMessage =
+<<<<<<< HEAD
   | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number; turn: number }
   | { type: 'join'; slot: number; uid: string; platform: Platform; name: string }
   | { type: 'leave'; slot: number; uid: string }
@@ -202,3 +239,9 @@ export function wifiQrText(ssid: string, password: string, hidden = false): stri
   const auth = password ? `T:WPA;S:${esc(ssid)};P:${esc(password)};` : `T:nopass;S:${esc(ssid)};`;
   return `WIFI:${auth}${hidden ? 'H:true;' : ''};`;
 }
+=======
+  | { type: 'sample'; slot: number; t: number; acc: [number, number, number]; gyro: [number, number, number] }
+  | { type: 'join'; slot: number; platform: Platform; name: string }
+  | { type: 'leave'; slot: number }
+  | ({ type: 'swarm' } & SwarmFeatures);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94

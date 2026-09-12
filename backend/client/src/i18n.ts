@@ -2,6 +2,7 @@
 //  i18n.ts
 //  HIVE (client)
 //
+<<<<<<< HEAD
 //  Three languages, one object each. English is the default; the toggle is
 //  remembered per phone. English and German are all lower case — the site's
 //  design language — except names (HIVE, Safari, iPhone…) and acronyms. The Japanese strings use the polite です/ます register
@@ -22,12 +23,28 @@ const strings = {
     joining: 'joining…',
     leave: 'leave',
     yourName: 'name (optional)',
+=======
+//  Two languages, one object each. The toggle is remembered per phone.
+//
+
+export type Lang = 'en' | 'de';
+
+const strings = {
+  en: {
+    tagline: 'Swarm audio. Your phone becomes one voice in a swarm — its tilt and movement are turned into sound.',
+    join: 'Join the swarm',
+    joining: 'Joining…',
+    leave: 'Leave',
+    yourName: 'Name (optional)',
+    youAre: 'you are',
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     streaming: 'streaming',
     connecting: 'connecting…',
     reconnecting: 'reconnecting…',
     disconnected: 'disconnected',
     transport: 'link',
     rate: 'rate',
+<<<<<<< HEAD
     keepOpen: 'keep this page open and the screen on. move, tilt, turn.',
     acc: 'tilt / gravity — accelerometer, m/s²',
     gyro: 'turning speed — gyroscope, °/s',
@@ -52,10 +69,31 @@ const strings = {
     joining: 'beitreten…',
     leave: 'verlassen',
     yourName: 'name (optional)',
+=======
+    keepOpen: 'Keep this page open and the screen on. Move, tilt, turn.',
+    acc: 'accelerometer (m/s²)',
+    gyro: 'gyroscope (°/s)',
+    errInsecure: 'This page was opened over plain HTTP. Phones only share motion sensors over HTTPS — scan the QR code again and make sure the address starts with https://.',
+    errUnsupported: 'This browser does not expose motion sensors (no DeviceMotionEvent). Try Safari on iPhone or Chrome on Android.',
+    errDenied: 'Motion access was denied. On iPhone: reload the page and tap Allow — or check Settings → Safari → Motion & Orientation Access. On Android: check the site permissions in Chrome.',
+    errNoData: 'No sensor data is arriving. Is this a laptop? Motion sensors are only in phones and tablets.',
+    errServer: 'Cannot reach the server. Are you on the same Wi-Fi as the Mac running HIVE?',
+    retry: 'Try again',
+    credit: 'HIVE · Music & AI Hackathon 2026',
+  },
+  de: {
+    tagline: 'Swarm Audio. Dein Handy wird eine Stimme im Schwarm — Neigung und Bewegung werden zu Klang.',
+    join: 'Dem Schwarm beitreten',
+    joining: 'Beitreten…',
+    leave: 'Verlassen',
+    yourName: 'Name (optional)',
+    youAre: 'du bist',
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     streaming: 'sendet',
     connecting: 'verbinde…',
     reconnecting: 'verbinde neu…',
     disconnected: 'getrennt',
+<<<<<<< HEAD
     transport: 'verbindung',
     rate: 'rate',
     keepOpen: 'lass die seite offen und den bildschirm an. beweg dich, neige, dreh.',
@@ -104,19 +142,41 @@ const strings = {
     errNoData: 'センサーデータが届いていません。パソコンでご覧になっていませんか？モーションセンサーはスマートフォンとタブレットにのみ搭載されています。',
     errServer: 'サーバーに接続できません。HIVEを実行しているMacと同じWi-Fiに接続していますか？',
     retry: 'もう一度試す',
+=======
+    transport: 'Verbindung',
+    rate: 'Rate',
+    keepOpen: 'Lass die Seite offen und den Bildschirm an. Beweg dich, neige, dreh.',
+    acc: 'Beschleunigung (m/s²)',
+    gyro: 'Gyroskop (°/s)',
+    errInsecure: 'Diese Seite wurde über HTTP geöffnet. Handys geben Bewegungssensoren nur über HTTPS frei — scanne den QR-Code erneut und achte darauf, dass die Adresse mit https:// beginnt.',
+    errUnsupported: 'Dieser Browser bietet keine Bewegungssensoren (kein DeviceMotionEvent). Versuch Safari am iPhone oder Chrome unter Android.',
+    errDenied: 'Zugriff auf Bewegungsdaten wurde verweigert. iPhone: Seite neu laden und „Erlauben" tippen — oder Einstellungen → Safari → „Bewegung & Ausrichtung" prüfen. Android: Website-Berechtigungen in Chrome prüfen.',
+    errNoData: 'Es kommen keine Sensordaten. Ist das ein Laptop? Bewegungssensoren gibt es nur in Handys und Tablets.',
+    errServer: 'Server nicht erreichbar. Bist du im selben WLAN wie der Mac, auf dem HIVE läuft?',
+    retry: 'Nochmal versuchen',
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     credit: 'HIVE · Music & AI Hackathon 2026',
   },
 } as const;
 
 export type Key = keyof typeof strings.en;
 
+<<<<<<< HEAD
 const stored = localStorage.getItem('hive.lang');
 let current: Lang = stored === 'de' || stored === 'ja' ? stored : 'en';
+=======
+let current: Lang = (localStorage.getItem('hive.lang') as Lang | null)
+  ?? (navigator.language.toLowerCase().startsWith('de') ? 'de' : 'en');
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 export const lang = (): Lang => current;
 export const t = (key: Key): string => strings[current][key];
 export function setLang(l: Lang): void {
   current = l;
   localStorage.setItem('hive.lang', l);
+<<<<<<< HEAD
   document.documentElement.lang = LANG_TAG[l];
+=======
+  document.documentElement.lang = l === 'de' ? 'de-AT' : 'en-GB';
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 }
