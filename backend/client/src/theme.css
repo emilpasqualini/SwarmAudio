@@ -306,3 +306,28 @@ dl.info dd { margin: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
   main { padding: 18px 14px 0; }
   h1 { font-size: 1.7rem; }
 }
+
+/* --- the wall (projected) ------------------------------------------------- */
+
+body.wall { overflow: hidden; height: 100vh; }
+body.wall.idle { cursor: none; }
+body.wall #scene { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+body.wall #app { position: fixed; inset: 0; pointer-events: none; }
+body.wall #app.hidden-panels > * { opacity: 0; }
+body.wall #app > * { transition: opacity 0.4s ease; }
+
+.wall-corner { position: absolute; margin: 28px; }
+.wall-corner.top-left { top: 0; left: 0; }
+.wall-corner.top-right { top: 0; right: 0; text-align: right; }
+.wall-corner.bottom-left { bottom: 0; left: 0; }
+.wall-corner.bottom-right { bottom: 0; right: 0; text-align: right; }
+
+.wall-title { font-size: 3.2rem; line-height: 1; }
+.wall-count { font-family: var(--serif); font-size: 4rem; line-height: 1; color: var(--accent); }
+.wall-join { width: 300px; background: rgba(14, 14, 16, 0.85); backdrop-filter: blur(8px); }
+.wall-join .qr canvas { max-width: 260px; padding: 10px; }
+.wall-join .url { margin-top: 8px; font-size: 0.85rem; }
+.wall-steps { margin-top: 6px; font-size: 0.78rem; }
+.wall-swarm { display: flex; gap: 22px; }
+.wall-stat .v { display: block; font-family: var(--serif); font-size: 1.8rem; line-height: 1; }
+.wall-stat .k { font-size: 0.72rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-faint); }

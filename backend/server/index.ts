@@ -211,7 +211,8 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     console.log('');
     for (const a of addresses) console.log(`  phones:   https://${a.address}:${config.httpsPort}   (${a.iface})`);
     if (addresses.length === 0) console.log('  phones:   no LAN address found — are you on Wi-Fi?');
-    console.log(`  monitor:  http://localhost:${config.httpPort}/monitor`);
+    console.log(`  monitor:  http://localhost:${config.httpPort}/monitor   (laptop: config + devices)`);
+    console.log(`  wall:     http://localhost:${config.httpPort}/wall      (projector: QR + visuals)`);
     console.log(`  feed:     ws://${ips[0] ?? 'localhost'}:${config.httpPort}/feed`);
     console.log(`  osc →     ${targets.all().map((t) => `${t.host}:${t.port}${t.enabled ? '' : ' (off)'}`).join(', ')}`);
     console.log('');

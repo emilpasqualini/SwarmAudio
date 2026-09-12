@@ -23,7 +23,7 @@ export interface TransportEvents {
 }
 
 const WS_OPEN_TIMEOUT = 1500;
-const MAX_INFLIGHT_POSTS = 2;
+const MAX_INFLIGHT_POSTS = 3;
 const RECONNECT_MS = [500, 1000, 2000, 3000, 5000];
 
 export class Transport {
@@ -74,7 +74,9 @@ export class Transport {
       body: frame,
       headers: { 'Content-Type': 'application/octet-stream' },
       cache: 'no-store',
-      keepalive: true,
+      // No `keepalive: true` here: that flag is for requests that must outlive
+      // the page, and Safari serves those on a slower path. The leave beacon
+      // is the one request that needs it.
     }).then((res) => {
       this.inflight--;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
