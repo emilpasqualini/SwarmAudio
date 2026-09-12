@@ -27,6 +27,11 @@ export class WallState {
   private wire = '';
   private readonly listeners: ((text: string) => void)[] = [];
 
+  constructor(queenUid: string) {
+    this.queenUid = queenUid;
+    this.encode();   // so phones learn who the queen is even before the wall reports any bees
+  }
+
   onChange(fn: (text: string) => void): void { this.listeners.push(fn); }
 
   setQueen(uid: string): void {

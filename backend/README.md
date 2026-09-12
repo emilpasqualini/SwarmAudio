@@ -58,7 +58,8 @@ Only the ports come from the environment and need a restart:
 2. Tap **join the swarm** → on iPhone allow motion access.
 3. Keep the page open. The phone shows the wall in miniature — every bee as a
    dot, yours ringed, the queen golden — its slot number (`#3`), six live bars,
-   and one of two lines: *collide with the queen to become queen* or *you are
+   and one of three lines: *no queen yet — move a lot!* (whoever moves most
+   is crowned first), *collide with the queen to become queen*, or *you are
    the queen*. Languages: EN (default) · DE · 日本語.
 
 The little map is fed on the link the phone already has — as the reply to a

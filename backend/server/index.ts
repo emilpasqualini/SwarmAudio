@@ -52,8 +52,7 @@ const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
 const queen = new QueenKeeper(registry, settings);
-const wall = new WallState();
-wall.setQueen(store.settings.queenUid);
+const wall = new WallState(store.settings.queenUid);
 
 const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, wall, log);

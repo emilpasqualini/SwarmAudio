@@ -45,6 +45,8 @@ export class SwarmMap {
   }
 
   get iAmQueen(): boolean { return this.queenUid !== '' && this.queenUid === this.myUid; }
+  /** '' until the first snapshot arrives, then the server's word. */
+  get queen(): string { return this.queenUid; }
 
   stop(): void { cancelAnimationFrame(this.raf); }
 
