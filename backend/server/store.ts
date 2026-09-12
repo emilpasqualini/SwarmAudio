@@ -27,7 +27,9 @@ export class Store {
     try {
       const parsed = JSON.parse(readFileSync(file, 'utf8')) as FileShape;
       this.targets = (parsed.targets ?? []).map((t) => ({ ...t, sent: 0, error: null }));
-      this.settings = { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) };
+      // Only keys that still exist: renamed settings fall back to their defaults.
+      const known = Object.fromEntries(Object.entries(parsed.settings ?? {}).filter(([k]) => k in DEFAULT_SETTINGS));
+      this.settings = { ...DEFAULT_SETTINGS, ...known };
     } catch (err) {
       console.warn(`[hive] could not read ${file}: ${(err as Error).message}`);
     }

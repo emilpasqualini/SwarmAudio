@@ -54,7 +54,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n * 100) / 100;
     }
-    for (const key of ['oscPerSample', 'oscMag', 'oscSwarm'] as const) {
+    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
     const previous = this.store.settings;
@@ -68,7 +68,7 @@ export class SettingsController {
   private applyTo(s: Settings, previous: Settings): void {
     if (s.swarmHz !== previous.swarmHz) this.swarm.setHz(s.swarmHz);
     if (s.deviceTimeoutMs !== previous.deviceTimeoutMs) this.registry.setTimeout(s.deviceTimeoutMs);
-    this.osc.flags = { perSample: s.oscPerSample, mag: s.oscMag, swarm: s.oscSwarm };
+    this.osc.flags = { wide: s.oscWide, perField: s.oscPerField, roster: s.oscRoster, swarm: s.oscSwarm };
     this.registry.condition.idleAfter = s.zeroIdleAfter;
     this.registry.condition.baselineTau = s.zeroTau;
     if (s.simulate !== previous.simulate) {

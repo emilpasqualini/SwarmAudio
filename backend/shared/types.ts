@@ -20,6 +20,8 @@ export const PLATFORM_FROM_CODE: Platform[] = ['unknown', 'ios', 'android', 'oth
 export interface Sample {
   /** Slot of the device that produced it (1..N). */
   slot: number;
+  /** Stable 8-character id of the phone. */
+  uid: string;
   /** Server arrival time, ms since epoch. */
   t: number;
   /** Client-side timestamp, ms since epoch (client clock). */
@@ -40,6 +42,8 @@ export type Transport = 'ws' | 'post';
 
 export interface DeviceInfo {
   id: string;
+  /** First 8 characters of `id`; what the OSC side sees. */
+  uid: string;
   slot: number;
   name: string;
   platform: Platform;
@@ -82,11 +86,13 @@ export interface Settings {
   deviceTimeoutMs: number;
   /** Fake phones; 0 = off. */
   simulate: number;
-  /** Send /hive/dev/<slot>/acc, /gyro per sample. */
-  oscPerSample: boolean;
-  /** Send /hive/dev/<slot>/mag per sample. */
-  oscMag: boolean;
-  /** Send /hive/swarm/* at swarmHz. */
+  /** Send the wide /hive/sample message per sample. */
+  oscWide: boolean;
+  /** Send the per-field /hive/dev/<slot>/* messages per sample. */
+  oscPerField: boolean;
+  /** Send /hive/roster and /hive/schema every second. */
+  oscRoster: boolean;
+  /** Send /hive/swarm (wide) and /hive/swarm/* at swarmHz. */
   oscSwarm: boolean;
   /** Seconds at rest before the zero starts to follow. */
   zeroIdleAfter: number;
@@ -98,8 +104,9 @@ export const DEFAULT_SETTINGS: Settings = {
   swarmHz: 30,
   deviceTimeoutMs: 3000,
   simulate: 0,
-  oscPerSample: true,
-  oscMag: true,
+  oscWide: true,
+  oscPerField: true,
+  oscRoster: true,
   oscSwarm: true,
   zeroIdleAfter: 1.2,
   zeroTau: 2.5,
@@ -140,7 +147,7 @@ export type MonitorMessage = MonitorHello | MonitorState;
 // --- raw feed (server → teammates' code, JSON) --------------------------------
 
 export type FeedMessage =
-  | { type: 'sample'; slot: number; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number }
-  | { type: 'join'; slot: number; platform: Platform; name: string }
-  | { type: 'leave'; slot: number }
+  | { type: 'sample'; slot: number; uid: string; t: number; acc: [number, number, number]; gyro: [number, number, number]; rel: [number, number, number]; activity: number; idle: number }
+  | { type: 'join'; slot: number; uid: string; platform: Platform; name: string }
+  | { type: 'leave'; slot: number; uid: string }
   | ({ type: 'swarm' } & SwarmFeatures);

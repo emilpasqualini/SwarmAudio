@@ -12,9 +12,16 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
 
 ## Working agreements
 
-- **Do not change the OSC address scheme or the binary frame** in
-  `backend/shared/protocol.ts` / `backend/server/osc.ts` without telling the
-  team — everyone's patches depend on it. Add new addresses; do not rename.
+- **The OSC protocol lives in `backend/shared/osc-schema.ts`** and nowhere
+  else: the server builds messages from it, `npm run docs:osc` regenerates
+  `backend/docs/OSC.md`, the dashboard renders it. Only ever *append* fields to
+  the wide messages; bump `OSC_SCHEMA_VERSION` when you do; never rename or
+  reorder — everyone's patches depend on it. Same for the binary phone frame
+  in `backend/shared/protocol.ts`.
+- New signal processing goes into `backend/server/condition.ts` (per device)
+  or `backend/server/swarm.ts` (whole swarm), then becomes a new schema field.
+  Phones send raw sensors only; all computation happens on the server.
+- Commits are authored by the humans on the team — no AI co-author trailers.
 - Backend: TypeScript, strict, no framework on the client, hand-written DOM.
   Comments explain *why* (see the file headers); match that style.
 - Do not add the `osc` npm package (pulls a vulnerable `ws`); OSC encoding is in

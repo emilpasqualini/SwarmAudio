@@ -46,7 +46,7 @@ const store = new Store(config.configFile);
 if (config.simulate !== null) store.settings.simulate = config.simulate;
 const registry = new Registry(store.settings.deviceTimeoutMs);
 const targets = new Targets(store, config.oscTargets);
-const osc = new OscOut(targets);
+const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
 const feed = new Feed(registry, swarm);
@@ -204,6 +204,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     registry.start();
     swarm.start();
     monitor.start();
+    osc.start();
     watchAddresses();
 
     console.log('');

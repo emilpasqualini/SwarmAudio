@@ -17,6 +17,7 @@ import { ActivityLog } from './log';
 import { Tones } from './tones';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
 import { SETTINGS_LIMITS } from '../../shared/types';
+import { EVENT_MESSAGES, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
 const log = new ActivityLog(document.getElementById('log')!);
@@ -81,13 +82,58 @@ const refs = {
   tonesButton: el('button', { class: 'pill quiet', text: 'Test tones: off' }),
   volume: el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: 0.5, style: 'width:120px' }),
   settingsCard: el('div', { class: 'card stack' }),
+  protocolCard: el('div', { class: 'card stack' }),
 };
+
+// --- protocol card: rendered from shared/osc-schema.ts, the same source docs/OSC.md is generated from.
+function buildProtocolCard(): void {
+  const fieldRows = (fields: typeof SAMPLE_FIELDS) => el('table', { class: 'schema' },
+    el('thead', {}, el('tr', {}, el('th', { text: '#' }), el('th', { text: 'field' }), el('th', { text: 'type' }), el('th', { text: 'unit' }), el('th', { text: 'meaning' }))),
+    el('tbody', {}, ...fields.map((f, i) => el('tr', {},
+      el('td', { class: 'num', text: String(i + 1) }), el('td', {}, el('code', { text: f.name })), el('td', { class: 'num', text: f.type }),
+      el('td', { text: f.unit || '—' }), el('td', { class: 'note', text: f.description }),
+    ))),
+  );
+  refs.protocolCard.replaceChildren(
+    el('div', { class: 'row between wrap' },
+      el('div', { class: 'section-label', text: `osc protocol · version ${OSC_SCHEMA_VERSION}` }),
+      el('a', { href: 'https://github.com/emilpasqualini/SwarmAudio/blob/main/backend/docs/OSC.md', target: '_blank', class: 'note', text: 'docs/OSC.md ↗' }),
+    ),
+    el('p', { class: 'note', text: 'Every enabled target gets the same stream. Identity: uid (stable per phone, 8 chars) and slot (1..N, per session). Fields are only ever appended between versions.' }),
+    el('details', { open: true },
+      el('summary', { class: 'note', text: `/hive/sample — ${SAMPLE_FIELDS.length} arguments, ~60 Hz per phone · type tags ${typeTags(SAMPLE_FIELDS)}` }),
+      el('div', { class: 'table-wrap' }, fieldRows(SAMPLE_FIELDS)),
+    ),
+    el('details', {},
+      el('summary', { class: 'note', text: `/hive/swarm — ${SWARM_FIELDS.length} arguments at the swarm rate · ${typeTags(SWARM_FIELDS)}` }),
+      el('div', { class: 'table-wrap' }, fieldRows(SWARM_FIELDS)),
+    ),
+    el('details', {},
+      el('summary', { class: 'note', text: 'events: join · leave · roster · schema · ping' }),
+      el('div', { class: 'table-wrap' }, el('table', { class: 'schema' },
+        el('tbody', {}, ...EVENT_MESSAGES.map((m) => el('tr', {},
+          el('td', {}, el('code', { text: m.address })), el('td', { class: 'note', text: m.args }), el('td', { class: 'note', text: m.when }),
+        ))),
+      )),
+    ),
+    el('details', {},
+      el('summary', { class: 'note', text: 'receive it in Pd / Max / SuperCollider / Python' }),
+      el('pre', { class: 'snippet', text: [
+        'Pd:   [netreceive -u -b 9000] → [oscparse] → [list trim] → [route hive] → [route sample] → [unpack f s f f f f f f f f f f f f f f f]',
+        '      (examples/hive-receive.pd)',
+        'Max:  [udpreceive 9000] → [route /hive/sample] → [unpack i s f f f f f f f f f f f f f f f]',
+        "SC:   thisProcess.openUDPPort(9000); OSCdef(\\hive, { |m| m.postln }, '/hive/sample');",
+        'Py:   python3 examples/osc_listen.py 9000        (or JSON: examples/feed_client.py ws://<mac>:8080/feed)',
+      ].join('\n') }),
+    ),
+  );
+}
 
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
 type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau';
-type BoolKey = 'oscPerSample' | 'oscMag' | 'oscSwarm';
+type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm';
 const numInputs = new Map<NumKey, HTMLInputElement>();
 const boolButtons = new Map<BoolKey, HTMLButtonElement>();
 
@@ -126,9 +172,10 @@ function buildSettingsCard(h: MonitorHello): void {
       ...numberSetting('deviceTimeoutMs', 'device timeout', 'ms of silence before a phone is dropped'),
       ...numberSetting('zeroIdleAfter', 'zero: rest before', 's at rest before the zero starts following the resting tilt', 0.1),
       ...numberSetting('zeroTau', 'zero: slide time', 's — time constant of the zero sliding over; rel → 0 at rest', 0.1),
-      ...boolSetting('oscPerSample', 'osc per sample', '/hive/dev/<n>/acc (raw), /rel (re-zeroed), /gyro, /activity'),
-      ...boolSetting('oscMag', 'osc magnitudes', '/hive/dev/<n>/mag: |acc| |rel| |gyro|'),
-      ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm/count, energy, motion, sync'),
+      ...boolSetting('oscWide', 'osc /hive/sample', 'the wide message: everything per sample, fixed order — see protocol card'),
+      ...boolSetting('oscPerField', 'osc per field', '/hive/dev/<slot>/acc · rel · gyro · activity · mag'),
+      ...boolSetting('oscRoster', 'osc roster', '/hive/roster + /hive/schema every second'),
+      ...boolSetting('oscSwarm', 'osc swarm', '/hive/swarm (wide) + /hive/swarm/count · energy · motion · sync'),
       el('span', { class: 'k', text: 'ports' }),
       el('span', { class: 'note', text: `https ${h.httpsPort} (phones) · http ${h.httpPort} (this page, /feed) — set HIVE_HTTPS_PORT / HIVE_HTTP_PORT and restart` }),
       el('span', { class: 'k', text: 'saved to' }),
@@ -183,6 +230,7 @@ function buildPage(): void {
   refs.tonesButton.onclick = () => { void toggleTones(); };
   refs.volume.oninput = () => tones.setVolume(Number(refs.volume.value));
   buildSettingsCard(hello);
+  buildProtocolCard();
 
   root.replaceChildren(el('main', { class: 'wide stack' },
     el('div', { class: 'row between wrap' },
@@ -216,11 +264,12 @@ function buildPage(): void {
         ),
       ),
     ),
+    refs.protocolCard,
     el('div', { class: 'card' },
       el('div', { class: 'section-label', text: 'swarm' }),
       el('div', { class: 'table-wrap' }, el('table', {},
         el('thead', {}, el('tr', {},
-          el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
+          el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'uid' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
           el('th', { text: 'hz' }), el('th', { text: 'rel x y z · turn x y z' }), el('th', { text: '|rel|' }), el('th', { text: '|turn|' }), el('th', { text: 'act' }), el('th'),
         )),
         refs.tbody,
@@ -277,7 +326,7 @@ function renderDevices(devices: DeviceInfo[]): void {
       const bars = Array.from({ length: 6 }, (_, i) => signedBar(i >= 3 ? 'gyro' : ''));
       const cells = [
         el('td', { class: 'num' }, el('span', { class: 'row' }, el('span', { class: 'dot' }), `${d.slot}`)),
-        el('td'), el('td'), el('td'), el('td', { class: 'num' }),
+        el('td'), el('td', { class: 'num' }), el('td'), el('td'), el('td', { class: 'num' }),
         el('td', {}, el('div', { class: 'mini' }, ...bars)),
         el('td', { class: 'num' }), el('td', { class: 'num' }), el('td', { class: 'num' }),
         el('td', {}, (() => {
@@ -293,15 +342,16 @@ function renderDevices(devices: DeviceInfo[]): void {
     }
     const c = row.cells;
     c[1]!.textContent = d.name || '—';
-    c[2]!.textContent = d.platform;
-    c[3]!.textContent = d.transport.toUpperCase();
-    c[4]!.textContent = d.hz.toFixed(0);
+    c[2]!.textContent = d.uid;
+    c[3]!.textContent = d.platform;
+    c[4]!.textContent = d.transport.toUpperCase();
+    c[5]!.textContent = d.hz.toFixed(0);
     if (d.last) {
       const { rel, gyro, activity } = d.last;
       [...rel, ...gyro].forEach((v, i) => setSigned(row!.bars[i]!, v, i < 3 ? 10 : 360));
-      c[6]!.textContent = Math.hypot(...rel).toFixed(1);
-      c[7]!.textContent = Math.hypot(...gyro).toFixed(0);
-      c[8]!.textContent = activity.toFixed(2);
+      c[7]!.textContent = Math.hypot(...rel).toFixed(1);
+      c[8]!.textContent = Math.hypot(...gyro).toFixed(0);
+      c[9]!.textContent = activity.toFixed(2);
     }
   }
   for (const [slot, row] of rows) if (!seen.has(slot)) { row.tr.remove(); rows.delete(slot); }
