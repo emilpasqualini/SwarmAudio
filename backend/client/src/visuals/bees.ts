@@ -30,17 +30,23 @@
 //  into a bystander changes nothing — and the wall tells the server. For now
 //  the crown is all she has; her solo is still to come.
 //
-//  The camera (backend/vision) adds a second, anonymous layer: the people it
-//  sees are soft shadows on the wall, their groups faint rings. Nobody there is
-//  matched to a phone. With coupling on (dashboard), bees are drawn toward the
-//  crowds and keep their distance according to how spread out the room is —
-//  the room shapes the swarm without anyone holding a phone.
+//  The camera (backend/vision) adds a second, anonymous layer. In field mode
+//  (a full room) it is weather: the optical-flow grid glows where the crowd
+//  moves, streaked in the direction of the motion, with a faint warm wash
+//  where people stand dense. In people mode (small rounds) the people it
+//  sees are soft shadows, their groups faint rings. Nobody is matched to a
+//  phone. With coupling on (dashboard), the animals are drawn toward the
+//  motion (or the groups), keep their distance according to how coherent
+//  (or how spread out) the room is, and when the crowd has a clear beat their
+//  wings and legs fall into it — the room shapes the swarm without anyone
+//  holding a phone.
 //
 //  The tilt used here is the server's `rel`, the activity and the turn are the
 //  server's too (server/condition.ts), so the wall shows what the OSC side
 //  hears. A phone at rest has activity ≈ 0: its bee hovers and drifts home.
 //
 
+import { CAM_GRID } from '../../../shared/types';
 import type { FeedMessage } from '../../../shared/types';
 import type { Frame, Visual } from './visual';
 
@@ -214,6 +220,14 @@ export class Bees implements Visual {
   private camCount = 0;
   private camSeen = -Infinity;
   private clock = 0;
+  // the field
+  private camMode: 'field' | 'people' = 'field';
+  private flow: [number, number, number][] = [];
+  private density: number[] = [];
+  private flowCoherence = 0;
+  private beat = 0;
+  private beatStrength = 0;
+  private hot: { x: number; y: number; e: number }[] = [];   // the liveliest cells, world coordinates
 
   resize(width: number, height: number): void { this.aspect = width / height; }
 
@@ -251,6 +265,17 @@ export class Bees implements Visual {
       this.spread = msg.spread;
       this.camCount = msg.count;
       this.camSeen = this.clock;
+      this.camMode = msg.mode;
+      this.flow = msg.flow;
+      this.density = msg.density;
+      this.flowCoherence = msg.flowCoherence;
+      this.beat = msg.beat;
+      this.beatStrength = msg.beatStrength;
+      this.hot = msg.flow
+        .map((c, k) => ({ x: ((k % CAM_GRID.w) + 0.5) / CAM_GRID.w * w, y: (Math.floor(k / CAM_GRID.w) + 0.5) / CAM_GRID.h, e: c[2] }))
+        .filter((c) => c.e > 0.15)
+        .sort((a, b) => b.e - a.e)
+        .slice(0, 3);
     } else if (msg.type === 'sample') {
       const b = this.bees.get(msg.slot);
       if (!b) return;
@@ -279,16 +304,21 @@ export class Bees implements Visual {
     return best;
   }
 
-  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling, species }: Frame): void {
+  draw({ ctx, width, height, dt, time, colour, queen: serverQueen, crown, running, round, coupling, species, queenHidden }: Frame): void {
     const sheep = species === 'sheep';
     this.aspect = width / height;
     const w = this.aspect;
     this.clock = time;
     this.drawCamera(ctx, height, dt, time);
-    // coupling: bees keep their distance according to how spread out the room is
-    const camLive = time - this.camSeen < SHADOW_TTL && this.camCount > 0;
+    // coupling: the animals keep their distance according to the room — how
+    // coherent its motion is (field) or how spread out it stands (people)
+    const fieldMode = this.camMode === 'field';
+    const camLive = time - this.camSeen < SHADOW_TTL && (fieldMode ? this.hot.length > 0 : this.camCount > 0);
     const couple = coupling.on && camLive && running ? coupling.strength : 0;
-    const separation = couple > 0 ? SEPARATION * (0.5 + this.spread * 1.5) : SEPARATION;
+    const separation = couple > 0
+      ? SEPARATION * (fieldMode ? 1.5 - this.flowCoherence : 0.5 + this.spread * 1.5)
+      : SEPARATION;
+    const beatLocked = couple > 0 && fieldMode && this.beatStrength > 0.4 && this.beat > 0;
     if (round !== this.round) {
       // Reset: everyone takes off again from a fresh spot.
       this.round = round;
@@ -304,15 +334,16 @@ export class Bees implements Visual {
     const live = [...this.bees.values()].filter((b) => !b.leaving).length;
     const shrink = Math.min(1, Math.sqrt(FULL_SIZE_UP_TO / Math.max(1, live)));
     const r0 = Math.min(width, height) * this.radius * shrink * (sheep ? 1.5 : 1);   // a sheep is a bigger animal
-    const sizeOf = (b: Bee): number => b.uid === queen ? QUEEN_SCALE : 1;
+    const sizeOf = (b: Bee): number => b.uid === queen && !queenHidden ? QUEEN_SCALE : 1;
 
     const all = [...this.bees.values()];
     for (const b of all) {
       b.alpha += (b.leaving ? -1 : 1) * dt * 2;
       if (b.alpha <= 0 && b.leaving) { this.bees.delete(b.slot); continue; }
       b.alpha = clamp(b.alpha, 0, 1);
-      const isQueen = b.uid === queen;
-      const r = r0 * sizeOf(b);
+      // hidden-queen game: she looks like everyone else (the crown still passes, silently)
+      const isQueen = b.uid === queen && !queenHidden;
+      const r = r0 * (queenHidden ? 1 : sizeOf(b));
       const rWorld = r * 2 / height;         // a bee is about 2 r long
 
       // --- steering -----------------------------------------------------------
@@ -336,7 +367,15 @@ export class Bees implements Visual {
       }
       // The crowd the camera sees pulls: toward the nearest group, the bigger
       // the harder, never harder than the tilt itself.
-      if (couple > 0 && this.rings.length) {
+      if (couple > 0 && fieldMode && this.hot.length) {
+        // toward the nearest of the liveliest cells, the livelier the harder
+        let best = this.hot[0]!, bestD = Infinity;
+        for (const c of this.hot) { const d = Math.hypot(c.x - b.x, c.y - b.y); if (d < bestD) { bestD = d; best = c; } }
+        if (bestD > 0.08) {
+          const toward = Math.atan2(best.y - b.y, best.x - b.x);
+          dHeading += wrapAngle(toward - b.heading) * couple * STEER_TILT * best.e;
+        }
+      } else if (couple > 0 && this.rings.length) {
         let best: Ring | null = null, bestD = Infinity;
         for (const r of this.rings) { const d = Math.hypot(r.x - b.x, r.y - b.y); if (d < bestD) { bestD = d; best = r; } }
         if (best && bestD > best.r) {
@@ -369,7 +408,8 @@ export class Bees implements Visual {
       const beat = resting ? 0.6 : (isQueen ? 1.5 + 8 * b.activity : 2 + 16 * b.activity);   // Hz
       const amplitude = resting ? 0.08 : 0.15 + 0.55 * Math.min(1, b.activity * 1.5);        // rad
       // bees: wings beat with activity. sheep: legs swing with the distance walked.
-      if (sheep) b.wingPhase = (b.wingPhase + b.speed * 60 * dt) % (Math.PI * 2);
+      if (beatLocked && !resting) b.wingPhase = (b.wingPhase + Math.PI * 2 * this.beat * dt) % (Math.PI * 2);   // the room's beat
+      else if (sheep) b.wingPhase = (b.wingPhase + b.speed * 60 * dt) % (Math.PI * 2);
       else b.wingPhase = (b.wingPhase + Math.PI * 2 * beat * dt) % (Math.PI * 2);
       const wing = Math.sin(b.wingPhase) * amplitude;
       // a sheep that comes to rest decides — by lot — whether to lie down or graze
@@ -474,6 +514,43 @@ export class Bees implements Visual {
 
   /** The camera's layer, underneath the bees: soft shadows for people, faint rings for groups. */
   private drawCamera(ctx: CanvasRenderingContext2D, height: number, dt: number, time: number): void {
+    const live = time - this.camSeen < SHADOW_TTL;
+    if (this.camMode === 'field' && live && this.flow.length) {
+      // the field: a glow per cell where the picture moves, streaked with the
+      // flow; a fainter warm wash where people stand dense
+      const w = this.aspect;
+      const cw = w / CAM_GRID.w * height, ch = height / CAM_GRID.h;
+      const rad = Math.max(cw, ch) * 0.9;
+      for (let k = 0; k < this.flow.length; k++) {
+        const [vx, vy, e] = this.flow[k]!;
+        const d = this.density[k] ?? 0;
+        if (e < 0.02 && d < 0.05) continue;
+        const px = ((k % CAM_GRID.w) + 0.5) * cw, py = (Math.floor(k / CAM_GRID.w) + 0.5) * ch;
+        if (d > 0.05) {
+          const g = ctx.createRadialGradient(px, py, 0, px, py, rad * 1.2);
+          g.addColorStop(0, `rgba(242,184,180,${(0.06 * d).toFixed(3)})`);
+          g.addColorStop(1, 'rgba(242,184,180,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(px, py, rad * 1.2, 0, Math.PI * 2); ctx.fill();
+        }
+        if (e >= 0.02) {
+          const g = ctx.createRadialGradient(px, py, 0, px, py, rad);
+          g.addColorStop(0, `rgba(242,184,180,${(0.18 * e).toFixed(3)})`);
+          g.addColorStop(1, 'rgba(242,184,180,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(px, py, rad, 0, Math.PI * 2); ctx.fill();
+          const mag = Math.hypot(vx, vy);
+          if (mag > 0.02) {
+            ctx.strokeStyle = `rgba(242,184,180,${(0.35 * e).toFixed(3)})`;
+            ctx.lineWidth = Math.max(1, rad * 0.06);
+            ctx.lineCap = 'round';
+            const L = rad * 0.7 * e;
+            ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + vx / mag * L, py + vy / mag * L); ctx.stroke();
+          }
+        }
+      }
+      return;
+    }
     const k = lerpFactor(SHADOW_TAU, dt);
     for (const [id, sh] of this.shadows) {
       const age = time - sh.seen;

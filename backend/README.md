@@ -46,7 +46,8 @@ big enough to scan from across a table.
 | queen / queen after | who the queen bee is (♛ in the table crowns one by hand; a bee that flies into her takes the crown; with no queen, the phone that moved most is crowned after *queen after* seconds) |
 | iphone hotspot / wi-fi name / wi-fi password | the network the phones must be on — rendered as a *join this Wi-Fi* QR code on the dashboard and on the wall (step 1, before the join code). macOS hides the SSID from apps, so type it; the hotspot toggle only changes the hints and wording |
 | wall: wi-fi code / join code | show or hide each QR code on the wall — off once everyone is in, and the bees get the whole wall |
-| camera: preview / osc camera / osc per person / cluster radius / mirror / wall coupling / coupling strength | the camera pipeline (see below); *wall coupling* draws the bees toward the crowds the camera sees |
+| camera: mode / detect rate / preview / osc camera / osc per person / cluster radius / mirror / wall coupling / coupling strength | the camera pipeline (see below): *field* for a full room, *people* for small rounds; *wall coupling* draws the animals toward the crowd's motion (field) or groups (people) |
+| hidden queen | game mode: no crown anywhere but this dashboard and OSC — the room has to find her by ear; the crown still passes on collision, silently |
 | osc global / osc mix | switch the meta-parameter families |
 | osc parameters | one chip per small message (dev/acc, swarm/energy, global/tempo, cam/person, mix/covered, …) — off = not sent; saves Wi-Fi traffic for whatever nobody patches |
 | ♛ / × in the device table | crown a device / drop it now |
@@ -143,13 +144,35 @@ so pick by name).
 ML leaves the GPU to the wall on the projector — use it when both run on the
 same Mac and the wall stutters.
 
-What comes out, per processed frame (~25 fps on an M1 Pro):
-- **people** — tracker id, position, `depth` (box height: closer = bigger),
-  `armsUp` (0–2 wrists above shoulders), `crouch`, `energy` (how fast they move);
-- **clusters** — groups closer than the *cluster radius* (tiny DBSCAN);
-- **room numbers** — count, spread, energy, centroid, mean armsUp;
-- **crowd motion** (server-side, frame to frame) — flow, turbulence,
-  moveSync, converge, nearest, stillness, occupancy.
+Two modes (dashboard: *mode*):
+
+- **field** (default — a room with a hundred people): dense **optical flow**
+  on a 160×90 copy of every frame, averaged into an **8×6 grid** — where the
+  picture moves, how hard, in which direction. It does not care how many
+  people there are, works in the dark and with everyone overlapping. From it:
+  `flowEnergy`, `flowCoherence` (does the crowd move as one?), the motion's
+  centre, and — on the server — the crowd's **beat** (clapping, bouncing,
+  swaying) with its strength. The model still looks for people a few times a
+  second (*detect rate*, front rows, no ids) for gestures and a **density
+  grid**.
+- **people** (small rounds): the model at full rate with tracking — per person
+  id, position, `depth` (box height: closer = bigger), `armsUp` (0–2 wrists
+  above shoulders), `crouch`, `energy`; **clusters** (tiny DBSCAN, *cluster
+  radius*); room numbers; and **crowd motion** from frame to frame (flow,
+  turbulence, moveSync, converge, nearest, stillness, occupancy).
+
+Both modes send both data sets; the chips under *osc parameters* mute what
+nobody uses. Only one camera process is served at a time — a second one is
+told to wait.
+
+**Where to put the camera.** At eye level in front of the first row (the
+plan for the presentation) the people path sees the first 10–20 well, and the
+field still sees everyone's motion — heads bobbing in the back are motion too.
+Higher and wider (an iPhone as Continuity Camera with the 0.5× lens on a
+shelf) is better for density. Optical flow needs *texture*, not brightness:
+stage light is fine, a strobe is not. `beat` counts motion bursts — a crowd
+bouncing at 2 Hz reads as 4 Hz (up and down are both motion); clapping reads
+as the clap rate.
 
 All of it goes out as `/hive/cam*` OSC (own switches), into `/feed`, onto the
 wall (people as soft shadows, groups as rings; with *wall coupling* the bees
@@ -302,17 +325,37 @@ for people seen in both):
 - **stillness** — fraction of people with energy $<0.05$;
 - **occupancy** — fraction of a $4\times3$ grid over the frame with someone in it.
 
+**The field** ([vision/hive_vision.py](vision/hive_vision.py) `FlowField`, [vision.ts](server/vision.ts)):
+Farneback dense optical flow (Farnebäck 2003) between consecutive 160×90 grey
+frames gives a displacement per pixel; divided by the frame width and the frame
+interval it is a velocity $\mathbf v$ in frame widths per second. Per grid cell
+$c$ (8×6): $\bar{\mathbf v}_c$ = mean velocity, $e_c=\min(1,\ \overline{\|\mathbf v\|}_c/0.5)$
+the energy, both smoothed with $\tau=0.15$ s. Then, with $E=\sum_c e_c$:
+
+$$\mathrm{flowEnergy}=\tfrac{1}{48}\sum_c e_c,\qquad
+\mathrm{flowCoherence}=\frac{\big\|\sum_c e_c\,\bar{\mathbf v}_c\big\|}{\sum_c e_c\,\|\bar{\mathbf v}_c\|},\qquad
+(\mathrm{flowCx},\mathrm{flowCy})=\frac{1}{E}\sum_c e_c\,\mathbf p_c$$
+
+($\mathbf p_c$ the cell centre). **beat**: flowEnergy is resampled onto an even
+20 Hz grid using the frames' own timestamps (frames arrive unevenly), the last
+128 values are demeaned and Hann-windowed, and the strongest local
+autocorrelation peak between 0.5 and 6 Hz — the shortest lag among peaks within
+80 % of the highest, i.e. the fundamental — gives `beat` $=20/\ell^\ast$ Hz
+and `beatStrength` $=r(\ell^\ast)$ (0 when below 0.3). **density**: detected
+people binned into the same grid, smoothed ($\alpha=0.2$ per detection),
+divided by the fullest cell.
+
 ### Bees ⇄ camera — `/hive/mix` ([mix.ts](server/mix.ts))
 
 Bee positions $\mathbf b_k$ (from the wall, $x$ divided by the aspect ratio so
 both pictures are $[0,1]^2$), headings $\theta_k$, and the camera's people,
 clusters and flow:
 
-- **distance** $=\|\bar{\mathbf b}-(c_x,c_y)\|$;
-- **beesInCrowd** — fraction of bees with $\|\mathbf b_k-\mathbf c_j\|\le r_j+0.04$ for some cluster $j$;
+- **distance** $=\|\bar{\mathbf b}-\mathbf c\|$, where $\mathbf c$ is the motion's centre (field mode) or the people's centroid (people mode);
+- **beesInCrowd** — fraction of bees over a grid cell with $e_c>0.3$ (field) or with $\|\mathbf b_k-\mathbf c_j\|\le r_j+0.04$ for some cluster $j$ (people);
 - **queenInCrowd** — the same test for the queen's bee (0/1);
 - **covered** — fraction of people with a bee within 0.1;
-- **alignment** $=\cos\angle\big(\sum_k(\cos\theta_k,\sin\theta_k),\ (\mathrm{flowX},\mathrm{flowY})\big)$, 0 when the crowd barely moves;
+- **alignment** $=\cos\angle\big(\sum_k(\cos\theta_k,\sin\theta_k),\ \mathbf f\big)$ with $\mathbf f$ the energy-weighted mean flow (field) or the people's mean velocity (people); 0 when the crowd barely moves;
 - **balance** $=\dfrac{\#\text{bees}}{\#\text{bees}+\#\text{people}}$.
 
 ### The wall's flight model ([client/src/visuals/bees.ts](client/src/visuals/bees.ts))
@@ -353,7 +396,10 @@ swing with the distance covered), face left or right instead of turning, and
 when they rest they either lie down or graze — decided by lot each time. The
 queen sheep is the big black one with a white rim.
 
-One bee is the **queen** — larger, golden, a halo. The server decides who
+One bee is the **queen** — larger, golden, a halo. With **hidden queen** on
+(dashboard) she looks like everyone else and her own phone does not tell her —
+only the dashboard and OSC know, so the sound has to give her away and the
+room has to find her; the crown still passes on collision, silently. The server decides who
 (`queenUid`, `/hive/queen` on OSC): crowned by hand on the dashboard, or, while
 there is no queen, the phone that moved most within *queen after* seconds. On
 the wall a bee that flies *into* her takes the crown (the mover wins; the queen
@@ -420,6 +466,7 @@ server/wall.ts       the wall's bee positions, relayed to the phones' maps on th
 server/global.ts     /hive/global — swarm meta-parameters (correlation, phase, tempo, spectrum, entropy …)
 server/vision.ts     the camera process's frames: validation, crowd motion, relay to OSC / feed / wall / dashboard
 server/mix.ts        /hive/mix — bees ⇄ camera
+server/dsp.ts        FFT, windowing, autocorrelation tempo — shared by global.ts and vision.ts
 vision/              Python: hive_vision.py (YOLO11n-pose, tracking, clustering) · start.sh · requirements.txt
 server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
 start.sh             the one command

@@ -16,6 +16,7 @@
 
 import type { Registry } from './registry';
 import type { GlobalFeatures, Sample } from '../shared/types';
+import { spectralCentroid, tempoOf, windowed } from './dsp';
 
 const HISTORY = 256;          // samples per phone (~4 s at 60 Hz)
 const WINDOW = 60;            // samples for coherence (~1 s)
@@ -31,31 +32,6 @@ interface Track {
   onsets: number[];           // timestamps
   lastSeen: number;
   last: Sample | null;
-}
-
-/** In-place radix-2 FFT, real input in `re`, `im` zero on entry. n must be a power of two. */
-function fft(re: Float64Array, im: Float64Array): void {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) { [re[i], re[j]] = [re[j]!, re[i]!]; [im[i], im[j]] = [im[j]!, im[i]!]; }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = -2 * Math.PI / len;
-    const wr = Math.cos(ang), wi = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let cr = 1, ci = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const a = i + k, b = i + k + len / 2;
-        const tr = re[b]! * cr - im[b]! * ci, ti = re[b]! * ci + im[b]! * cr;
-        re[b] = re[a]! - tr; im[b] = im[a]! - ti;
-        re[a] = re[a]! + tr; im[a] = im[a]! + ti;
-        const ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
-      }
-    }
-  }
 }
 
 export class Global {
@@ -214,35 +190,11 @@ export class Global {
       for (let j = n - k; j < n; j++) { peak = Math.max(peak, x[j]!); sq += x[j]! * x[j]!; }
       const rms = Math.sqrt(sq / k);
       g.crest = rms > 1e-4 ? peak / rms : 0;
-      // demean + Hann for the spectral features
-      const re = new Float64Array(SERIES), im = new Float64Array(SERIES);
-      let power = 0;
-      for (let j = 0; j < n; j++) { const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * j / (n - 1)); re[j] = (x[j]! - mean) * w; power += re[j]! * re[j]!; }
+      // rhythm features on the demeaned, Hann-windowed series
+      const { y, power } = windowed(x, n);
       if (power > 1e-6) {
-        // tempo: the strongest *local* peak of the autocorrelation between
-        // 0.5 and 6 Hz — the global maximum would always sit at the smallest
-        // lag for any smooth signal.
-        const minLag = Math.max(2, Math.round(this.hz / 6)), maxLag = Math.min(n - 3, Math.round(this.hz / 0.5));
-        let r0 = 0;
-        for (let j = 0; j < n; j++) r0 += re[j]! * re[j]!;
-        const ac = new Float64Array(maxLag + 2);
-        for (let lag = minLag - 1; lag <= maxLag + 1; lag++) {
-          let r = 0;
-          for (let j = lag; j < n; j++) r += re[j]! * re[j - lag]!;
-          ac[lag] = r / r0;
-        }
-        let best = 0, bestLag = 0;
-        for (let lag = minLag; lag <= maxLag; lag++) {
-          if (ac[lag]! > ac[lag - 1]! && ac[lag]! >= ac[lag + 1]! && ac[lag]! > best) { best = ac[lag]!; bestLag = lag; }
-        }
-        g.tempo = best > 0.3 && bestLag > 0 ? this.hz / bestLag : 0;
-        fft(re, im);
-        let num = 0, den = 0;
-        for (let b = 1; b < SERIES / 2; b++) {
-          const p = re[b]! * re[b]! + im[b]! * im[b]!;
-          num += p * (b * this.hz / SERIES); den += p;
-        }
-        g.centroid = den > 0 ? num / den : 0;
+        g.tempo = tempoOf(y, this.hz).hz;
+        g.centroid = spectralCentroid(y, this.hz);
       }
     }
     return g;

@@ -106,8 +106,12 @@ ${fieldTable(CAM_FIELDS)}
 
 ${messageTable(CAM_MESSAGES)}
 
-The last eight fields are the crowd's *motion*, computed on the server from
-frame to frame: where it drifts (flow), how disordered (turbulence), whether
+Fields 17–23 (v4) are the **field**: dense optical flow on an 8×6 grid over the
+whole picture — energy, coherence, centre of motion, the crowd's beat — for a
+room with a hundred people, where counting bodies stops making sense. The
+grids themselves come as \`/hive/cam/grid\`, \`/hive/cam/gridflow\` and
+\`/hive/cam/density\`. Fields 9–16 are the crowd's *motion* from tracked people,
+computed on the server from frame to frame: where it drifts (flow), how disordered (turbulence), whether
 people move alike (moveSync), whether they come together (converge < 0), how
 close they stand (nearest), how many stand still, how much of the room is used.
 

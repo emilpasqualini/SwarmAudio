@@ -22,7 +22,7 @@ backend/vision/  Python camera pipeline (YOLO11n-pose) feeding the server; own v
 - New signal processing goes into `backend/server/condition.ts` (per device),
   `backend/server/swarm.ts` / `global.ts` (whole swarm), `vision.ts` (camera
   crowd) or `mix.ts` (bees ⇄ camera), then becomes a new schema field and a
-  `MUTABLE` key. Phones and the camera process send raw observations only;
+  `MUTABLE` key. Rhythm/spectral helpers live in `server/dsp.ts` — reuse them. Phones and the camera process send raw observations only;
   all computation happens on the server. Python side: numpy only — no
   scikit-learn, no python-osc.
 - Commits are authored by the humans on the team — no AI co-author trailers.
