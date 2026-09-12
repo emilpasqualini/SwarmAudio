@@ -1,5 +1,6 @@
 ultralytics>=8.3
 opencv-python>=4.9
-numpy>=1.26
+numpy>=1.26,<2.4
 websockets>=12
 lap>=0.5
+coremltools>=8
