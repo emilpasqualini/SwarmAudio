@@ -249,7 +249,14 @@ def open_capture(args: argparse.Namespace):
         cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION) if sys.platform == "darwin" else cv2.VideoCapture(i)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(args.width * 9 / 16))
-        ok, _ = cap.read() if cap.isOpened() else (False, None)
+        # AVFoundation needs a moment after opening before the first frame arrives
+        ok = False
+        if cap.isOpened():
+            for _ in range(15):
+                ok, _ = cap.read()
+                if ok:
+                    break
+                time.sleep(0.1)
         if ok:
             print(f"[vision] camera {i} open", flush=True)
             return cap

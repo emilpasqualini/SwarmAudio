@@ -25,4 +25,10 @@ if [ ! -f .venv/.installed ] || [ requirements.txt -nt .venv/.installed ]; then
   .venv/bin/pip install -q -r requirements.txt
   touch .venv/.installed
 fi
+# A broken environment (a half-finished pip run, an auto-update) must not look
+# like a missing camera: check the imports and repair before running.
+if ! .venv/bin/python -c "import numpy, cv2, torch, ultralytics, websockets" >/dev/null 2>&1; then
+  echo "▸ repairing the Python environment"
+  .venv/bin/pip install -q --force-reinstall -r requirements.txt
+fi
 exec .venv/bin/python hive_vision.py "$@"
