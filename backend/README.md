@@ -47,7 +47,7 @@ big enough to scan from across a table.
 | iphone hotspot / wi-fi name / wi-fi password | the network the phones must be on — rendered as a *join this Wi-Fi* QR code on the dashboard and on the wall (step 1, before the join code). macOS hides the SSID from apps, so type it; the hotspot toggle only changes the hints and wording |
 | wall: wi-fi code / join code | show or hide each QR code on the wall — off once everyone is in, and the bees get the whole wall |
 | camera: mode / detect rate / preview / osc camera / osc per person / cluster radius / mirror / wall coupling / coupling strength | the camera pipeline (see below): *field* for a full room, *people* for small rounds; *wall coupling* draws the animals toward the crowd's motion (field) or groups (people) |
-| crowd shoves | the motion under an animal nudges it along the camera's flow (half the flow speed × the cell's energy) — a draught, not a current |
+| crowd shoves / shove strength | the motion under an animal pushes it along the camera's flow: *strength* × flow speed × the cell's energy (0.5 = a draught, 3 = a gale) |
 | hidden queen | game mode: no crown anywhere but this dashboard and OSC — the room has to find her by ear; the crown still passes on collision, silently |
 | osc global / osc mix | switch the meta-parameter families |
 | osc parameters | one chip per small message (dev/acc, swarm/energy, global/tempo, cam/person, mix/covered, …) — off = not sent; saves Wi-Fi traffic for whatever nobody patches |

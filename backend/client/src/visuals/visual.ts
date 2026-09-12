@@ -30,8 +30,8 @@ export interface Frame {
   round: number;
   /** Camera coupling: whether bees are drawn toward the crowds the camera sees, and how hard (0..1). */
   coupling: { on: boolean; strength: number };
-  /** The crowd's motion shoves the animals a little along the flow. */
-  push: boolean;
+  /** The crowd's motion shoves the animals along the flow: on/off and how much of the flow they pick up. */
+  push: { on: boolean; strength: number };
   /** What to draw the swarm as (dashboard setting). */
   species: Species;
   /** Game mode: draw the queen like everyone else; the crown still passes, silently. */

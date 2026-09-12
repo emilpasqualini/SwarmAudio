@@ -185,7 +185,7 @@ function buildProtocolCard(): void {
 // --- settings card: inputs are built once and only refreshed while not focused,
 //     so a 10 Hz snapshot never yanks a half-typed number away. -----------------
 
-type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps' | 'camDetectFps';
+type NumKey = 'swarmHz' | 'deviceTimeoutMs' | 'simulate' | 'zeroIdleAfter' | 'zeroTau' | 'filterMinCutoff' | 'filterBeta' | 'queenAfter' | 'camStrength' | 'camEps' | 'camDetectFps' | 'camPushStrength';
 type BoolKey = 'oscWide' | 'oscPerField' | 'oscRoster' | 'oscSwarm' | 'wifiHotspot' | 'wallWifiCode' | 'wallJoinCode' | 'oscCam' | 'oscCamPersons' | 'camCoupling' | 'camMirror' | 'camPreview' | 'oscGlobal' | 'oscMix' | 'queenHidden' | 'camPush';
 type TextKey = 'wifiSsid' | 'wifiPassword';
 const numInputs = new Map<NumKey, HTMLInputElement>();
@@ -371,7 +371,8 @@ function buildPage(): void {
       ...boolSetting('camMirror', 'mirror', 'flip left/right so the picture behaves like a mirror'),
       ...boolSetting('camCoupling', 'wall coupling', 'bees are drawn toward the crowds the camera sees; the room\'s spread sets how far apart they keep'),
       ...numberSetting('camStrength', 'coupling strength', '0 = none, 1 = the crowd wins over the tilt', 0.05),
-      ...boolSetting('camPush', 'crowd shoves', 'the motion the camera sees under an animal gives it a gentle nudge along the flow — noticeable, not much'),
+      ...boolSetting('camPush', 'crowd shoves', 'the motion the camera sees under an animal pushes it along the flow'),
+      ...numberSetting('camPushStrength', 'shove strength', 'how much of the flow an animal picks up: 0.5 = a draught, 1 = you feel it, 3 = a gale', 0.1),
     ),
     el('p', { class: 'note', text: 'YOLO11n-pose on this Mac: people, skeletons, clusters. Nobody in the picture is matched to a phone — the camera is a field, the phones are the agents.' }),
   );

@@ -56,7 +56,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n);
     }
-    for (const key of ['zeroIdleAfter', 'zeroTau', 'filterMinCutoff', 'filterBeta', 'camStrength', 'camEps'] as const) {
+    for (const key of ['zeroIdleAfter', 'zeroTau', 'filterMinCutoff', 'filterBeta', 'camStrength', 'camEps', 'camPushStrength'] as const) {
       if (patch[key] === undefined) continue;
       const n = Number(patch[key]);
       const { min, max } = SETTINGS_LIMITS[key];
