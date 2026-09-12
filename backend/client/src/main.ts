@@ -14,8 +14,12 @@
 import './theme.css';
 import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
+<<<<<<< HEAD
 import { LANG_TAG, lang, setLang, t } from './i18n';
 import { SwarmMap } from './swarm-map';
+=======
+import { lang, setLang, t } from './i18n';
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 import type { Lang } from './i18n';
 import { checkSupport, detectPlatform, keepAwake, releaseWake, requestMotionPermission, startMotion } from './sensors';
 import type { MotionSample, MotionStream } from './sensors';
@@ -64,6 +68,7 @@ const state: State = {
   last: null,
 };
 
+<<<<<<< HEAD
 // Per-axis sign flips, chosen by the person holding the phone. Applied before
 // batching, so OSC, the wall and the bars all agree with what they feel.
 type Axis = 'x' | 'y' | 'z';
@@ -73,6 +78,8 @@ const invert: Record<Axis, boolean> = (() => {
 })();
 const saveInvert = (): void => localStorage.setItem('hive.invert', JSON.stringify(invert));
 
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 let transport: Transport | null = null;
 let motion: MotionStream | null = null;
 let builder: FrameBuilder | null = null;
@@ -85,9 +92,12 @@ let hzTimer = 0;
 // --------------------------------------------------------------------------- //
 
 function onSample(s: MotionSample): void {
+<<<<<<< HEAD
   if (invert.x) { s.ax = -s.ax; s.gx = -s.gx; }
   if (invert.y) { s.ay = -s.ay; s.gy = -s.gy; }
   if (invert.z) { s.az = -s.az; s.gz = -s.gz; }
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   state.last = s;
   sampleCount++;
   builder!.push(s.t, s.ax, s.ay, s.az, s.gx, s.gy, s.gz);
@@ -120,7 +130,10 @@ async function join(): Promise<void> {
       else scheduleRender();
     },
     onLog: (line) => log.log(line),
+<<<<<<< HEAD
     onWall: (text) => { swarmMap?.receive(text); scheduleRender(); },
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   });
   transport.start();
   motion = startMotion(platform, onSample, () => { log.warn('no motion events'); showError('nodata'); });
@@ -135,7 +148,10 @@ async function join(): Promise<void> {
 }
 
 function leave(): void {
+<<<<<<< HEAD
   swarmMap?.stop(); swarmMap = null;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   motion?.stop(); motion = null;
   flush();
   transport?.stop(); transport = null;
@@ -148,7 +164,10 @@ function leave(): void {
 }
 
 function showError(kind: ErrorKind): void {
+<<<<<<< HEAD
   swarmMap?.stop(); swarmMap = null;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   motion?.stop(); motion = null;
   transport?.stop(); transport = null;
   clearInterval(hzTimer);
@@ -177,8 +196,13 @@ function setJoining(on: boolean): void {
 
 function header(): HTMLElement {
   const toggle = el('div', { class: 'segmented', role: 'group', 'aria-label': 'language' },
+<<<<<<< HEAD
     ...(['en', 'de', 'ja'] as Lang[]).map((l) => {
       const b = el('button', { class: lang() === l ? 'on' : '', text: l === 'ja' ? '日本語' : l.toUpperCase(), lang: LANG_TAG[l] });
+=======
+    ...(['en', 'de'] as Lang[]).map((l) => {
+      const b = el('button', { class: lang() === l ? 'on' : '', text: l.toUpperCase() });
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
       b.onclick = () => { setLang(l); render(); };
       return b;
     }),
@@ -202,6 +226,7 @@ function joinView(): HTMLElement {
 let bars: HTMLElement[] = [];
 let values: HTMLElement[] = [];
 let statusLine: HTMLElement | null = null;
+<<<<<<< HEAD
 let swarmMap: SwarmMap | null = null;
 let queenLine: HTMLElement | null = null;
 
@@ -212,26 +237,49 @@ const AXES: { key: keyof MotionSample; label: string; range: number; gyro: boole
   { key: 'gx', label: 'x', range: 360, gyro: true },
   { key: 'gy', label: 'y', range: 360, gyro: true },
   { key: 'gz', label: 'z', range: 360, gyro: true },
+=======
+let slotBadge: HTMLElement | null = null;
+
+const AXES: { key: keyof MotionSample; label: string; range: number; gyro: boolean }[] = [
+  { key: 'ax', label: 'acc x', range: 20, gyro: false },
+  { key: 'ay', label: 'acc y', range: 20, gyro: false },
+  { key: 'az', label: 'acc z', range: 20, gyro: false },
+  { key: 'gx', label: 'gyr x', range: 360, gyro: true },
+  { key: 'gy', label: 'gyr y', range: 360, gyro: true },
+  { key: 'gz', label: 'gyr z', range: 360, gyro: true },
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 ];
 
 function streamingView(): HTMLElement {
   bars = []; values = [];
+<<<<<<< HEAD
   const accAxes = el('div', { class: 'axes' });
   const gyroAxes = el('div', { class: 'axes' });
+=======
+  const axes = el('div', { class: 'axes' });
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   AXES.forEach((a, i) => {
     const bar = signedBar(a.gyro ? 'gyro' : '');
     const value = el('span', { class: 'value', text: '0.0' });
     bars[i] = bar; values[i] = value;
+<<<<<<< HEAD
     (a.gyro ? gyroAxes : accAxes).append(el('span', { class: 'name', text: a.label }), bar, value);
   });
 
   swarmMap = new SwarmMap(deviceId.replace(/-/g, '').slice(0, 8));
   queenLine = el('div', { class: 'queen-line', text: t('queenHint') });
+=======
+    axes.append(el('span', { class: 'name', text: a.label }), bar, value);
+  });
+
+  slotBadge = el('div', { class: 'slot-badge', text: '·' }, el('small', { text: t('youAre') }));
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   statusLine = el('div', { class: 'status' });
 
   const leaveButton = el('button', { class: 'pill quiet', text: t('leave') });
   leaveButton.onclick = leave;
 
+<<<<<<< HEAD
   const flips = el('div', { class: 'row wrap' },
     ...(['x', 'y', 'z'] as Axis[]).map((axis) => {
       const b = el('button', { class: `pill small ${invert[axis] ? 'on' : 'quiet'}`, text: `−${axis}` });
@@ -259,6 +307,15 @@ function streamingView(): HTMLElement {
     ),
     statusLine,
     el('div', { class: 'card' }, flips),
+=======
+  const view = el('div', { class: 'stack' },
+    el('div', { class: 'card' }, slotBadge),
+    el('div', { class: 'card stack' },
+      el('div', { class: 'section-label', text: `${t('acc')} · ${t('gyro')}` }),
+      axes,
+    ),
+    statusLine,
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     el('div', { class: 'row', style: 'justify-content:center' }, leaveButton),
     el('p', { class: 'note center', text: t('keepOpen') }),
   );
@@ -276,7 +333,11 @@ function errorView(): HTMLElement {
 }
 
 function render(): void {
+<<<<<<< HEAD
   document.documentElement.lang = LANG_TAG[lang()];
+=======
+  document.documentElement.lang = lang() === 'de' ? 'de-AT' : 'en-GB';
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   const body = state.view === 'join' ? joinView() : state.view === 'streaming' ? streamingView() : errorView();
   root.replaceChildren(el('main', { class: 'stack' }, header(), body, el('div', { class: 'credit', text: t('credit') })));
 }
@@ -299,6 +360,7 @@ function updateLive(): void {
       values[i]!.textContent = v.toFixed(1);
     });
   }
+<<<<<<< HEAD
   if (swarmMap) {
     const colour = state.slot ? slotColour(state.slot) : 'var(--text-faint)';
     for (const b of bars) b.style.setProperty('--slot', colour);
@@ -310,10 +372,18 @@ function updateLive(): void {
     const waiting = !swarmMap?.running;
     queenLine.textContent = waiting ? t('waiting') : me ? t('queenYou') : none ? t('queenNone') : t('queenHint');
     queenLine.classList.toggle('you', me);
+=======
+  if (slotBadge) {
+    const colour = state.slot ? slotColour(state.slot) : 'var(--text-faint)';
+    slotBadge.style.setProperty('--slot', colour);
+    slotBadge.firstChild!.textContent = state.slot ? `#${state.slot}` : '·';
+    for (const b of bars) b.style.setProperty('--slot', colour);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   }
   if (statusLine) {
     const st = state.status === 'open' ? t('streaming') : state.status === 'connecting' ? t('connecting') : state.status === 'reconnecting' ? t('reconnecting') : t('disconnected');
     const cls = state.status === 'open' ? 'ok' : state.status === 'down' ? 'fail' : 'warn';
+<<<<<<< HEAD
     statusLine.replaceChildren(...[
       el('span', { class: cls, text: st }),
       el('span', {}, el('span', { class: 'k', text: `${t('transport')} ` }), state.mode.toUpperCase()),
@@ -324,6 +394,14 @@ function updateLive(): void {
         : null,
       el('span', {}, el('span', { class: 'k', text: 'id ' }), deviceId.slice(0, 8)),
     ].filter((n): n is HTMLElement => n !== null));
+=======
+    statusLine.replaceChildren(
+      el('span', { class: cls, text: st }),
+      el('span', {}, el('span', { class: 'k', text: `${t('transport')} ` }), state.mode.toUpperCase()),
+      el('span', {}, el('span', { class: 'k', text: `${t('rate')} ` }), `${state.hz} Hz`),
+      el('span', {}, el('span', { class: 'k', text: 'id ' }), deviceId.slice(0, 8)),
+    );
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   }
 }
 

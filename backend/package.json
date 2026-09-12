@@ -3,14 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+<<<<<<< HEAD
   "description": "HIVE \u2014 swarm audio. Phones stream gyro + accelerometer to a Mac, the Mac forwards OSC to the installation.",
+=======
+  "description": "HIVE — swarm audio. Phones stream gyro + accelerometer to a Mac, the Mac forwards OSC to the installation.",
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   "scripts": {
     "dev": "concurrently -k -n vite,server -c blue,magenta \"vite build --watch\" \"tsx watch server/index.ts\"",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "start": "tsx server/index.ts",
     "osc:listen": "tsx scripts/osc-listen.ts",
+<<<<<<< HEAD
     "protocol:test": "tsx shared/protocol.test.ts",
     "docs:osc": "tsx scripts/osc-docs.ts"
+=======
+    "protocol:test": "tsx shared/protocol.test.ts"
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   },
   "dependencies": {
     "qrcode": "^1.5.4",

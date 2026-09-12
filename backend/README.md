@@ -10,9 +10,14 @@ phone (Safari / Chrome)        Mac: backend                       sound
  devicemotion 60 Hz  ──wss/POST──▶ ingest → registry ──UDP/OSC──▶ Pd / Max / SC (any machine)
  binary frames, ~50 ms batches            │
                                           ├──▶ swarm features @ 30 Hz (energy, motion, sync)
+<<<<<<< HEAD
                                           ├──▶ /feed     raw JSON WebSocket (Python etc.)
                                           ├──▶ /wall     projector: wi-fi + join QR codes, the swarm as bees, the queen
                                           └──▶ /monitor  dashboard: config, devices, targets, test tones
+=======
+                                          ├──▶ /feed   raw JSON WebSocket (Python etc.)
+                                          └──▶ /monitor dashboard: QR, devices, targets, test tones
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 ```
 
 ## Run
@@ -33,11 +38,15 @@ big enough to scan from across a table.
 
 | dashboard | what |
 |---|---|
+<<<<<<< HEAD
 | start / pause · reset | people can join while paused — bees hover, no queen race, phones say *waiting*. **start** lets it all go (movement, queen race, crown passing); **reset** clears the queen, re-spawns every bee and waits for start again. The server starts paused |
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 | OSC targets | add/remove laptops (`host:port`), enable/disable, Ping, send counter, last error |
 | fake phones | 0–50 virtual devices through the real pipeline (also `--sim n`) |
 | swarm rate | Hz of `/hive/swarm/*` |
 | device timeout | ms of silence before a phone is dropped |
+<<<<<<< HEAD
 | filter: min cutoff / beta | One-Euro smoothing of `rel` — rest-state cutoff (Hz) and how fast it opens up on movement |
 | zero: rest before / slide time | when and how quickly the adaptive zero follows a resting phone (`rel` → 0) |
 | osc /hive/sample / per field / roster / swarm | switch each message family on or off |
@@ -45,6 +54,10 @@ big enough to scan from across a table.
 | iphone hotspot / wi-fi name / wi-fi password | the network the phones must be on — rendered as a *join this Wi-Fi* QR code on the dashboard and on the wall (step 1, before the join code). macOS hides the SSID from apps, so type it; the hotspot toggle only changes the hints and wording |
 | wall: wi-fi code / join code | show or hide each QR code on the wall — off once everyone is in, and the bees get the whole wall |
 | ♛ / × in the device table | crown a device / drop it now |
+=======
+| osc acc + gyro / magnitudes / swarm | switch each message family on or off |
+| × in the device table | drop a device now |
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 | test tones | sonify the swarm on this Mac |
 
 Only the ports come from the environment and need a restart:
@@ -56,6 +69,7 @@ Only the ports come from the environment and need a restart:
    there is no authority that signs certificates for a LAN address):
    - **iPhone/Safari:** *Show Details → visit this website → Visit Website*
    - **Android/Chrome:** *Advanced → Proceed to … (unsafe)*
+<<<<<<< HEAD
 2. Tap **join the swarm** → on iPhone allow motion access.
 3. Keep the page open. The phone shows the wall in miniature — every bee as a
    dot, yours ringed, the queen golden — its slot number (`#3`), six live bars,
@@ -67,6 +81,11 @@ The little map is fed on the link the phone already has — as the reply to a
 POSTed frame or a text message down the socket — ten times a second, and drawn
 a fifth of a second behind so the dots glide. It needs the wall page to be open
 somewhere: the flight model runs there, the server only relays positions.
+=======
+2. Tap **Join the swarm** → on iPhone allow motion access.
+3. Keep the page open. The phone shows its slot number (`#3`), its colour, and
+   six live bars. Slot numbers are what the sound side addresses.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 Why HTTPS at all: both iOS and Android only expose motion sensors to a secure
 page. Why the phone sometimes says `link POST` instead of `WS`: iOS Safari
@@ -76,6 +95,7 @@ Same data, same rate, ~20 ms more latency.
 
 ## OSC
 
+<<<<<<< HEAD
 The protocol is documented in **[docs/OSC.md](docs/OSC.md)** — generated from
 [`shared/osc-schema.ts`](shared/osc-schema.ts), the same tables the dashboard's
 *OSC protocol* card shows, so the three cannot disagree. In one breath:
@@ -111,6 +131,24 @@ there is no queen, the phone that moved most within *queen after* seconds. On
 the wall a bee that flies *into* her takes the crown (the mover wins; the queen
 bumping into a bystander changes nothing; phones lying still never take or lose
 it). Her solo on the sound side is still to come — `/hive/queen` is the hook.
+=======
+All addresses, all targets, one bundle per sample:
+
+```
+/hive/dev/<slot>/acc    f f f    m/s², gravity included; flat phone ≈ (0, 0, 9.81) on iOS *and* Android
+/hive/dev/<slot>/gyro   f f f    °/s about x, y, z
+/hive/dev/<slot>/mag    f f      |acc|  |gyro|
+/hive/dev/<slot>/join   s i      platform, slot
+/hive/dev/<slot>/leave  i        slot
+/hive/swarm/count       i        devices                    ┐
+/hive/swarm/energy      f        mean |acc − g|  (m/s²)     │ 30 Hz
+/hive/swarm/motion      f        mean |gyro|     (°/s)      │
+/hive/swarm/sync        f        0..1, 1 = all turning alike┘
+/hive/ping              i        from the dashboard's Ping button
+```
+
+Slots are small integers, reused after a device leaves, so `route 1 2 3` works.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 ## Team setup — receiving on another laptop
 
@@ -120,8 +158,13 @@ it). Her solo on the sound side is still to come — `/hive/queen` is the hook.
    Press **Ping**; your receiver should print `/hive/ping`.
 3. Receive:
    - **Pd:** open [`examples/hive-receive.pd`](examples/hive-receive.pd)
+<<<<<<< HEAD
      (`netreceive -u -b 9000 → oscparse → list trim → route hive → route sample → unpack`).
    - **Max:** `[udpreceive 9001]` → `[route /hive/sample]` → `[unpack i s f f f …]`.
+=======
+     (`netreceive -u -b 9001 → oscparse → list trim → route hive …`).
+   - **Max:** `[udpreceive 9001]` → `[route /hive/dev/1/acc]`.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
    - **SuperCollider:** `thisProcess.openUDPPort(9001); OSCFunc.trace(true);`
    - **Python, OSC:** `python3 examples/osc_listen.py 9001` (no dependencies).
    - **Python, raw JSON:** `pip install websockets`, then
@@ -143,10 +186,14 @@ carries it. This is Web Audio in the browser — a check, not the installation.
 - **Guest Wi-Fi often isolates clients** — phones cannot reach the Mac at all.
 - **The phone that provides a hotspot cannot reach its own clients.** If the
   Mac is tethered to your iPhone (`172.20.10.x`), that iPhone will never find
+<<<<<<< HEAD
   the server; every *other* phone on the hotspot will. Enter the hotspot's name
   and password on the dashboard so the wall shows a *join this Wi-Fi* QR code
   first; switch on *maximise compatibility* on the iPhone (2.4 GHz) so every
   phone can see it.
+=======
+  the server; every *other* phone on the hotspot will.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 - **Recommended at the venue — the Mac hosts the Wi-Fi, no internet needed:**
   System Settings → General → Sharing → *Internet Sharing*: share from
   *Ethernet* (works without a cable), to computers using *Wi-Fi*, name it
@@ -165,6 +212,7 @@ carries it. This is Web Audio in the browser — a check, not the installation.
 
 ```
 shared/protocol.ts   binary frame: 12-byte header + n × 7 float32   (npm run protocol:test)
+<<<<<<< HEAD
 shared/osc-schema.ts the OSC protocol as data → docs/OSC.md (npm run docs:osc) + dashboard card
 server/condition.ts  per-device One-Euro smoothing, adaptive zero (rel), activity, turn
 server/queen.ts      who the queen is when nobody said: the phone that moved most
@@ -172,6 +220,11 @@ server/wall.ts       the wall's bee positions, relayed to the phones' maps on th
 server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
 start.sh             the one command
 client/src/          phone app (main, sensors, transport, swarm-map, i18n EN/DE/JA) · wall (wall, visuals/bees) · dashboard (monitor, tones) · theme.css
+=======
+server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
+start.sh             the one command
+client/src/          phone app (main, sensors, transport, i18n) · dashboard (monitor, tones) · theme.css
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 examples/            osc_listen.py · feed_client.py · hive-receive.pd
 scripts/             osc-listen.ts (npm run osc:listen -- 9000)
 ```

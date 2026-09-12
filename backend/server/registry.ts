@@ -14,8 +14,11 @@
 
 import type { DecodedFrame } from '../shared/protocol';
 import type { DeviceInfo, Platform, Sample, Transport } from '../shared/types';
+<<<<<<< HEAD
 import { Conditioner } from './condition';
 import type { ConditionParams } from './condition';
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 export interface RegistryEvents {
   join: (device: DeviceInfo) => void;
@@ -26,7 +29,10 @@ export interface RegistryEvents {
 interface Device extends DeviceInfo {
   /** Recent inter-sample interval, EWMA in ms, for the Hz readout. */
   interval: number;
+<<<<<<< HEAD
   conditioner: Conditioner;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 }
 
 export class Registry {
@@ -35,9 +41,12 @@ export class Registry {
   private readonly listeners: { [K in keyof RegistryEvents]: RegistryEvents[K][] } = { join: [], leave: [], sample: [] };
   private sweeper: NodeJS.Timeout | null = null;
 
+<<<<<<< HEAD
   /** Shared with the settings controller, which edits it in place. */
   readonly condition: ConditionParams = { idleAfter: 1.2, baselineTau: 2.5, minCutoff: 1.0, beta: 0.3 };
 
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   constructor(private timeoutMs: number) {}
 
   setTimeout(ms: number): void {
@@ -79,6 +88,7 @@ export class Registry {
     const last = frame.samples[n - 1]!;
     for (let i = 0; i < n; i++) {
       const s = frame.samples[i]!;
+<<<<<<< HEAD
       let dtMs = 1000 / 60;
       if (device.last) {
         const dt = s.tClient - device.last.tClient;
@@ -88,15 +98,27 @@ export class Registry {
       const sample: Sample = {
         slot: device.slot,
         uid: device.uid,
+=======
+      const sample: Sample = {
+        slot: device.slot,
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
         t: now - (last.tClient - s.tClient),
         tClient: s.tClient,
         acc: s.acc,
         gyro: s.gyro,
+<<<<<<< HEAD
         rel: c.rel,
         activity: c.activity,
         idle: c.idle,
         turn: c.turn,
       };
+=======
+      };
+      if (device.last) {
+        const dt = s.tClient - device.last.tClient;
+        if (dt > 0 && dt < 1000) device.interval = device.interval ? device.interval * 0.9 + dt * 0.1 : dt;
+      }
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
       device.last = sample;
       for (const fn of this.listeners.sample) fn(sample, device);
     }
@@ -117,9 +139,14 @@ export class Registry {
     let slot = 1;
     while (this.bySlot.has(slot)) slot++;
     const device: Device = {
+<<<<<<< HEAD
       id, uid: id.replace(/-/g, '').slice(0, 8), slot, name, platform, transport,
       hz: 0, interval: 0, joinedAt: now, lastSeen: now, last: null,
       conditioner: new Conditioner(this.condition),
+=======
+      id, slot, name, platform, transport,
+      hz: 0, interval: 0, joinedAt: now, lastSeen: now, last: null,
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     };
     this.devices.set(id, device);
     this.bySlot.set(slot, device);

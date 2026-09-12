@@ -35,6 +35,7 @@ assert.throws(() => decodeFrame(frame.subarray(0, frame.byteLength - 1)));
 const bad = new Uint8Array(frame); bad[0] = 9;
 assert.throws(() => decodeFrame(bad));
 
+<<<<<<< HEAD
 // The wide OSC messages must match the schema they are documented by.
 import { SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from './osc-schema';
 import { sampleArgs, swarmArgs } from '../server/osc';
@@ -49,3 +50,6 @@ assert.equal(wide!.args[1], 'abcd1234');
 assert.ok(Math.abs((wide!.args[5] as number) - 9.81) < 1e-5);
 
 console.log('protocol round-trip ok · osc schema matches');
+=======
+console.log('protocol round-trip ok');
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94

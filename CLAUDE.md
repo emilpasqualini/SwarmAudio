@@ -12,6 +12,7 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
 
 ## Working agreements
 
+<<<<<<< HEAD
 - **The OSC protocol lives in `backend/shared/osc-schema.ts`** and nowhere
   else: the server builds messages from it, `npm run docs:osc` regenerates
   `backend/docs/OSC.md`, the dashboard renders it. Only ever *append* fields to
@@ -22,6 +23,11 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
   or `backend/server/swarm.ts` (whole swarm), then becomes a new schema field.
   Phones send raw sensors only; all computation happens on the server.
 - Commits are authored by the humans on the team — no AI co-author trailers.
+=======
+- **Do not change the OSC address scheme or the binary frame** in
+  `backend/shared/protocol.ts` / `backend/server/osc.ts` without telling the
+  team — everyone's patches depend on it. Add new addresses; do not rename.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 - Backend: TypeScript, strict, no framework on the client, hand-written DOM.
   Comments explain *why* (see the file headers); match that style.
 - Do not add the `osc` npm package (pulls a vulnerable `ws`); OSC encoding is in
@@ -32,9 +38,14 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
   (already gitignored).
 - Python helpers for consumers live in `backend/examples/` and must run with
   the standard library where possible.
+<<<<<<< HEAD
 - Language of code and comments: English. Phone UI has EN/DE/JA strings in
   `backend/client/src/i18n.ts` — add all three when you add a string; EN and DE
   are lower case by design.
+=======
+- Language of code and comments: English. Phone UI has EN/DE strings in
+  `backend/client/src/i18n.ts` — add both when you add a string.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 ## Quick start
 
@@ -53,6 +64,7 @@ python3 examples/osc_listen.py 9000                # see what the installation r
 - Both platforms cap sensors at ~60 Hz. iOS's gravity sign is flipped on the
   client so a flat phone reads `(0, 0, +9.81)` everywhere.
 - Slots (1..N) identify devices on the OSC side; UUIDs never leave the server.
+<<<<<<< HEAD
 - Everything downstream of `Registry.push` only sees `Sample { slot, uid, t, acc,
   gyro, rel, activity, idle, turn }` — that is the seam for replaying recorded
   or external (bee) swarm data later.
@@ -63,3 +75,7 @@ python3 examples/osc_listen.py 9000                # see what the installation r
   the server unless you also move those.
 - Phone UI strings: EN (default, all lower case) · DE (all lower case) · JA
   (polite です/ます, 女王蜂 for the queen) in `client/src/i18n.ts` — add all three.
+=======
+- Everything downstream of `Registry.push` only sees `Sample { slot, t, acc, gyro }`
+  — that is the seam for replaying recorded or external (bee) swarm data later.
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94

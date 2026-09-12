@@ -74,11 +74,14 @@
 
   --serif: 'Young Serif', Georgia, 'Times New Roman', serif;
   --body: 'Bitter', Georgia, serif;
+<<<<<<< HEAD
   /* Japanese: neither web font has CJK glyphs, so the system fonts take over
      (Hiragino on iOS/macOS, Noto Sans CJK on Android) — offline, nothing to
      ship. Latin runs still render in Bitter / Young Serif. */
   --serif-ja: 'Young Serif', 'Hiragino Mincho ProN', 'Noto Serif JP', 'Noto Serif CJK JP', 'Yu Mincho', serif;
   --body-ja: 'Bitter', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans CJK JP', 'Yu Gothic', sans-serif;
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --radius: 14px;
@@ -102,9 +105,12 @@ body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+<<<<<<< HEAD
 /* The whole page in Japanese, or a single element (the wall's third line). */
 :lang(ja) { font-family: var(--body-ja); line-height: 1.7; }
 :lang(ja) h1, :lang(ja) h2, :lang(ja) h3 { font-family: var(--serif-ja); }
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 h1, h2, h3 {
   font-family: var(--serif);
@@ -207,6 +213,7 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
 
 /* --- the swarm ------------------------------------------------------------ */
 
+<<<<<<< HEAD
 .swarm-map {
   display: block;
   width: 100%;
@@ -216,6 +223,16 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
 }
 .queen-line { text-align: center; font-size: 0.95rem; color: var(--text); opacity: 0.8; }
 .queen-line.you { color: #f2c14e; font-family: var(--serif); }
+=======
+.slot-badge {
+  font-family: var(--serif);
+  font-size: 4.5rem;
+  line-height: 1;
+  text-align: center;
+  color: var(--slot);
+}
+.slot-badge small { display: block; font-family: var(--body); font-size: 0.85rem; color: var(--text-faint); margin-top: 6px; }
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 
 .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--slot, var(--accent)); flex: 0 0 auto; }
 
@@ -315,6 +332,7 @@ dl.info dd { margin: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
   main { padding: 18px 14px 0; }
   h1 { font-size: 1.7rem; }
 }
+<<<<<<< HEAD
 
 table.schema td, table.schema th { padding: 5px 8px; font-size: 0.82rem; }
 table.schema code { font-family: var(--mono); font-size: 0.8rem; color: var(--accent); }
@@ -351,3 +369,5 @@ body.has-wifi .wall-join:not(.wall-wifi) { left: 200px; }
 .wall-swarm { display: flex; gap: 22px; }
 .wall-stat .v { display: block; font-family: var(--serif); font-size: 1.8rem; line-height: 1; }
 .wall-stat .k { font-size: 0.72rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-faint); }
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94

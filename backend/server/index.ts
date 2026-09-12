@@ -22,8 +22,11 @@ import { serveStatic, notFound } from './static';
 import { Registry } from './registry';
 import { Store } from './store';
 import { SettingsController } from './settings';
+<<<<<<< HEAD
 import { QueenKeeper } from './queen';
 import { WallState } from './wall';
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
 import { Targets, parseHostPort } from './targets';
 import { OscOut } from './osc';
 import { Swarm } from './swarm';
@@ -48,6 +51,7 @@ const store = new Store(config.configFile);
 if (config.simulate !== null) store.settings.simulate = config.simulate;
 const registry = new Registry(store.settings.deviceTimeoutMs);
 const targets = new Targets(store, config.oscTargets);
+<<<<<<< HEAD
 const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
@@ -58,6 +62,15 @@ const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, wall, log);
 const monitor = new Monitor(
   { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile, bootId: String(Date.now()) },
+=======
+const osc = new OscOut(targets);
+const swarm = new Swarm(registry, store.settings.swarmHz);
+const settings = new SettingsController(store, registry, swarm, osc);
+const feed = new Feed(registry, swarm);
+const ingest = createIngest(registry, log);
+const monitor = new Monitor(
+  { urls, qrUrl, httpPort: config.httpPort, httpsPort: config.httpsPort, configFile: config.configFile },
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   registry, targets, swarm, feed, settings, config.monitorHz,
 );
 
@@ -96,11 +109,14 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       const error = settings.update((await readJson(req)) as Record<string, unknown>);
       json(res, error ? 400 : 200, error ? { error } : settings.current); return true;
     }
+<<<<<<< HEAD
     if (pathname === '/api/wall' && req.method === 'GET') { json(res, 200, wall.snapshot()); return true; }
     if (pathname === '/api/wall' && req.method === 'POST') {
       wall.set(((await readJson(req)) as { bees?: unknown }).bees);
       res.writeHead(204).end(); return true;
     }
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     if (pathname === '/api/devices/kick' && req.method === 'POST') {
       const { slot } = (await readJson(req)) as { slot?: number };
       const d = registry.list().find((x) => x.slot === Number(slot));
@@ -214,6 +230,7 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     registry.start();
     swarm.start();
     monitor.start();
+<<<<<<< HEAD
     osc.start();
     queen.start();
     // The crown on the OSC side: an event when it moves, and once a second with the roster.
@@ -230,6 +247,8 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
       const d = registry.list().find((x) => x.uid === uid);
       log(uid ? `queen: #${d?.slot ?? '?'} ${d?.name ? `"${d.name}" ` : ''}(${uid})` : 'queen: none');
     });
+=======
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     watchAddresses();
 
     console.log('');
@@ -237,8 +256,12 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     console.log('');
     for (const a of addresses) console.log(`  phones:   https://${a.address}:${config.httpsPort}   (${a.iface})`);
     if (addresses.length === 0) console.log('  phones:   no LAN address found — are you on Wi-Fi?');
+<<<<<<< HEAD
     console.log(`  monitor:  http://localhost:${config.httpPort}/monitor   (laptop: config + devices)`);
     console.log(`  wall:     http://localhost:${config.httpPort}/wall      (projector: QR + visuals)`);
+=======
+    console.log(`  monitor:  http://localhost:${config.httpPort}/monitor`);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
     console.log(`  feed:     ws://${ips[0] ?? 'localhost'}:${config.httpPort}/feed`);
     console.log(`  osc →     ${targets.all().map((t) => `${t.host}:${t.port}${t.enabled ? '' : ' (off)'}`).join(', ')}`);
     console.log('');

@@ -59,7 +59,11 @@ export class Tones {
     if (!this.ctx) return;
     if (msg.type === 'join') this.ensure(msg.slot);
     else if (msg.type === 'leave') this.remove(msg.slot);
+<<<<<<< HEAD
     else if (msg.type === 'sample') this.update(msg.slot, msg.rel, msg.activity);
+=======
+    else if (msg.type === 'sample') this.update(msg.slot, msg.acc, msg.gyro);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   }
 
   private ensure(slot: number): Voice {
@@ -88,6 +92,7 @@ export class Tones {
     this.voices.delete(slot);
   }
 
+<<<<<<< HEAD
   private update(slot: number, rel: [number, number, number], activity: number): void {
     const v = this.ensure(slot);
     if (!v || !this.ctx) return;
@@ -102,5 +107,19 @@ export class Tones {
     const lean = Math.min(1, Math.hypot(rel[0], rel[1], rel[2]) / (G / 2));
     v.gain.gain.setTargetAtTime(0.15 + 0.6 * Math.max(activity, lean), now, 0.04);
     v.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, rx / (G / 2))), now, 0.05);
+=======
+  private update(slot: number, acc: [number, number, number], gyro: [number, number, number]): void {
+    const v = this.ensure(slot);
+    if (!v || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const [ax, ay] = acc;
+    // Tilt forward/back (y) bends the pitch up to a fifth either way.
+    const tilt = Math.max(-1, Math.min(1, ay / G));
+    v.osc.frequency.setTargetAtTime(v.base * 2 ** (tilt * 7 / 12), now, 0.03);
+    // Turning opens the tone: still phones hum quietly, moving ones sing.
+    const turn = Math.min(1, Math.hypot(...gyro) / 250);
+    v.gain.gain.setTargetAtTime(0.08 + 0.5 * turn, now, 0.04);
+    v.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, ax / G)), now, 0.05);
+>>>>>>> 791460b3b24265c8bbf40de2d4abdf0497736a94
   }
 }
