@@ -42,6 +42,7 @@ big enough to scan from across a table.
 | osc /hive/sample / per field / roster / swarm | switch each message family on or off |
 | queen / queen after | who the queen bee is (♛ in the table crowns one by hand; a bee that flies into her takes the crown; with no queen, the phone that moved most is crowned after *queen after* seconds) |
 | iphone hotspot / wi-fi name / wi-fi password | the network the phones must be on — rendered as a *join this Wi-Fi* QR code on the dashboard and on the wall (step 1, before the join code). macOS hides the SSID from apps, so type it; the hotspot toggle only changes the hints and wording |
+| wall: wi-fi code / join code | show or hide each QR code on the wall — off once everyone is in, and the bees get the whole wall |
 | ♛ / × in the device table | crown a device / drop it now |
 | test tones | sonify the swarm on this Mac |
 

@@ -54,7 +54,7 @@ export class SettingsController {
       if (!Number.isFinite(n) || n < min || n > max) return `${key} must be between ${min} and ${max}`;
       next[key] = Math.round(n * 100) / 100;
     }
-    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot'] as const) {
+    for (const key of ['oscWide', 'oscPerField', 'oscRoster', 'oscSwarm', 'wifiHotspot', 'wallWifiCode', 'wallJoinCode'] as const) {
       if (patch[key] !== undefined) next[key] = Boolean(patch[key]);
     }
     for (const key of ['wifiSsid', 'wifiPassword'] as const) {
