@@ -1,0 +1,688 @@
+[
+ {
+  "model_name": "clipper",
+  "model_id": "f52c1fbe8bfc0818500fd25e67c79848",
+  "file_size": 980212,
+  "is_input_mono": false,
+  "tags": [
+   "clipper"
+  ],
+  "model_short_description": "Audio clipper.",
+  "model_authors": [
+   "Andrew Fyfe"
+  ]
+ },
+ {
+  "model_name": "conv1d-overdrive.random",
+  "model_id": "77f28e280a7f000f2347a15c82b6d654",
+  "file_size": 1274344,
+  "is_input_mono": false,
+  "tags": [
+   "distortion",
+   "overdrive"
+  ],
+  "model_short_description": "Neural distortion/overdrive effect",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "DDSP.sax",
+  "model_id": "f9953a23e9efcac1b1860f0d6b964a52",
+  "file_size": 15936565,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "DDSP"
+  ],
+  "model_short_description": "DDSP model trained on saxophone sounds",
+  "model_authors": [
+   "Naotake Masuda"
+  ]
+ },
+ {
+  "model_name": "DDSP.shakuhachi",
+  "model_id": "54338855346c0f544813313783c99f45",
+  "file_size": 15936565,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "DDSP"
+  ],
+  "model_short_description": "DDSP model trained on shakuhachi sounds",
+  "model_authors": [
+   "Naotake Masuda"
+  ]
+ },
+ {
+  "model_name": "DDSP.violin",
+  "model_id": "83277ede8bec1a2e83a506b2b0129de8",
+  "file_size": 15936565,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "DDSP"
+  ],
+  "model_short_description": "DDSP model trained on violin sounds",
+  "model_authors": [
+   "Naotake Masuda"
+  ]
+ },
+ {
+  "model_name": "ddspXsynth",
+  "model_id": "b53ebc820df6605e79294bc3162faf6a",
+  "file_size": 13580369,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "DDSP",
+   "cross synthesis",
+   "synth"
+  ],
+  "model_short_description": "DDSP cross-synthesis model trained on synth data",
+  "model_authors": [
+   "David S\u00fcdholt"
+  ]
+ },
+ {
+  "model_name": "ddspXviolin",
+  "model_id": "90e77d852da9224b52dabcdf3a5a9f00",
+  "file_size": 13580369,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "DDSP",
+   "cross synthesis",
+   "violin"
+  ],
+  "model_short_description": "DDSP cross-synthesis model trained on violin data",
+  "model_authors": [
+   "David S\u00fcdholt"
+  ]
+ },
+ {
+  "model_name": "Demucs.StemSeparation",
+  "model_id": "ae6518d4feaa3223a304edd0372d2da8",
+  "file_size": 38102335,
+  "is_input_mono": false,
+  "tags": [
+   "source separation"
+  ],
+  "model_short_description": "Stem separation model that can split an audio mix into bass, drums, vocals, other using the four knobs.",
+  "model_authors": [
+   "Bogdan Teleaga"
+  ]
+ },
+ {
+  "model_name": "GCN.NeuralSpringReverb",
+  "model_id": "633cfee50e3356b55f46561e098c6862",
+  "file_size": 19579941,
+  "is_input_mono": true,
+  "tags": [
+   "audio effect",
+   "reverb",
+   "GCN"
+  ],
+  "model_short_description": "Neural spring reverb effect.",
+  "model_authors": [
+   "Francesco Papaleo"
+  ]
+ },
+ {
+  "model_name": "NeuraFuzz",
+  "model_id": "a89acd78b304dd17f2d1ae54925f5d08",
+  "file_size": 1190196,
+  "is_input_mono": true,
+  "tags": [
+   "fuzz",
+   "distortion",
+   "overdrive"
+  ],
+  "model_short_description": "Neural fuzz + Ring modulator",
+  "model_authors": [
+   "Marco Comunit\u00e0"
+  ]
+ },
+ {
+  "model_name": "RAVE.086-jaap-3.5m-noisefloor",
+  "model_id": "f940b1989d4517c5e862f183a613dc84",
+  "file_size": 150916794,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained on a dataset of Jaap Blonk\u02bcs vocal performances for IRCAM's RAVE Model Challenge 2025.",
+  "model_authors": [
+   "Jaap Blonk",
+   "Jonathan Chaim Reus",
+   "Victor Shepardson"
+  ]
+ },
+ {
+  "model_name": "RAVE.amen",
+  "model_id": "b829165ced64cd2359bc9f77853a8725",
+  "file_size": 71752126,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE timbre transfer model trained on the Amen drum break.",
+  "model_authors": [
+   "Naotake Masuda"
+  ]
+ },
+ {
+  "model_name": "RAVE.bird",
+  "model_id": "e0339e7a2283448832811722617938b4",
+  "file_size": 280717734,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE timbre transfer model trained on field recordings of bird songs.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.BuddhistChant",
+  "model_id": "bcfa5b8aec9623a51ce8d9ced1c55706",
+  "file_size": 83642030,
+  "is_input_mono": false,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE timbre transfer model trained on Buddhist chant. Best with soft, sustained sounds in relatively low range.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.BulgarianFemaleChoir",
+  "model_id": "ae0de4fc67c20cf337556641d99649fc",
+  "file_size": 83642094,
+  "is_input_mono": false,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "Stereo RAVE timbre transfer model trained on Bulgarian female choir.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.choir",
+  "model_id": "9dc20bce0eb677c764db1152ace7359b",
+  "file_size": 90114158,
+  "is_input_mono": false,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "Stereo RAVE timbre transfer model trained on choir sounds.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.C\u00fcmb\u00fc\u015f",
+  "model_id": "709501a3091892dd3a7d0863f82111ad",
+  "file_size": 89935214,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by \ud835\udd25\ud835\udd22\ud835\udd35\ud835\udd2c\ud835\udd2f\ud835\udd20\ud835\udd26\ud835\udd30\ud835\udd2a\ud835\udd2c\ud835\udd30 on recordings of C\u00fcmb\u00fc\u015f sounds, a turkish instrument from early c.XX",
+  "model_authors": [
+   "\ud835\udd25\ud835\udd22\ud835\udd35\ud835\udd2c\ud835\udd2f\ud835\udd20\ud835\udd26\ud835\udd30\ud835\udd2a\ud835\udd2c\ud835\udd30"
+  ]
+ },
+ {
+  "model_name": "RAVE.djembe",
+  "model_id": "7e3b4b6224d4c7edf1711a4be8297b05",
+  "file_size": 150816444,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "percussion"
+  ],
+  "model_short_description": "AI model that converts any incoming audio into djembe percussion sound.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.drumkit",
+  "model_id": "323b32423a0c0243dd7277d95103e944",
+  "file_size": 83452090,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE timbre transfer model trained on drum performances..",
+  "model_authors": [
+   "Naotake Masuda"
+  ]
+ },
+ {
+  "model_name": "RAVE.evoice",
+  "model_id": "6de8c0a6496e12d3a8a88e448e7c7489",
+  "file_size": 80684248,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained on English speech.",
+  "model_authors": [
+   "Antoine Caillon"
+  ]
+ },
+ {
+  "model_name": "RAVE.gamelan",
+  "model_id": "8d1e9da6f648c4c650d31c2b8d3caa95",
+  "file_size": 145288416,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained on Gamelan music dataset.",
+  "model_authors": [
+   "Scott Young"
+  ]
+ },
+ {
+  "model_name": "RAVE.glassharp",
+  "model_id": "ea3b814f01708661bb9a0a23809daafc",
+  "file_size": 83461550,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "percussion"
+  ],
+  "model_short_description": "AI model that converts any incoming audio into glass harp sound.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILBirdsMotherbird",
+  "model_id": "912e948d6ccb29687b53cd90a9ad478c",
+  "file_size": 139269088,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on bird sounds curated for the piece Motherbird.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILBirdsPluma",
+  "model_id": "b5e1d8e37fe6a5cd515c9d8b34bd56f6",
+  "file_size": 42892510,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on bird sounds curated by Giacomo Lepri for his instrument Pluma.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILGuitar",
+  "model_id": "048d74f3495d738b8048dda985955052",
+  "file_size": 164666802,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on dry electric guitar sounds.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILMagneticResonatorPiano",
+  "model_id": "95be5a2b9f28da818b4069c6c1b2ed25",
+  "file_size": 150781704,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on a magnetic resonator piano controlled by artificial life.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILOrganArchive",
+  "model_id": "426bf5ea655f7f83f61126d7ba3af48d",
+  "file_size": 164666994,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "organ"
+  ],
+  "model_short_description": "RAVE model trained by IIL on various recordings of organ music.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILOrganBach",
+  "model_id": "2489ce552e03efdcb0a30d98e31aa302",
+  "file_size": 164666866,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "organ"
+  ],
+  "model_short_description": "RAVE model trained by IIL on various recordings of J.S. Bach music for church organ.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILPondBrainHumpbacks",
+  "model_id": "2a907e7686ee16a9375766c70ae39fbe",
+  "file_size": 122204934,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on humpback whale recordings from the Watkins database, MBARI, and BBC.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILPondBrainMarineMammals",
+  "model_id": "22ea0158593426087d9b47f6d8ceef7d",
+  "file_size": 122205062,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on  various marine mammal sounds from NOAA, the Watkins database, freesound and others.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILPondBrainWater",
+  "model_id": "63ca698a5bdc498fb1965de0931ce443",
+  "file_size": 122204870,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on water recordings from freesound.org.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILSopranoSax",
+  "model_id": "9e8130da3a3a0e5f7d15299800ca2b63",
+  "file_size": 122194310,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on soprano sax improvisation by Franziska Schroeder.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILThales",
+  "model_id": "d6d9e5fa495304c2c8e2f18bd4cdd0fe",
+  "file_size": 26460612,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by IIL on a dataset composed of Thales, a musical instrument based on magnets",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILVoiceHiFiTTS",
+  "model_id": "3453792109ff4c951521ccad36bc153e",
+  "file_size": 164667314,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "voice"
+  ],
+  "model_short_description": "RAVE model trained by IIL on the Hi-Fi TTS audiobooks dataset.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILVoiceJVS",
+  "model_id": "64b8319597a734f222c012e7bee122d8",
+  "file_size": 150067912,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "voice"
+  ],
+  "model_short_description": "RAVE model trained by IIL on the Hi-Fi TTS speaker 9017 (John Van Stan).",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILVoiceVCTK",
+  "model_id": "162ce266a8401d0d1eca4343925d1b47",
+  "file_size": 150068296,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "voice"
+  ],
+  "model_short_description": "RAVE model trained by IIL on the CSTR VCTK Corpus multispeaker read speech dataset.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.IILVoiceVocalSet",
+  "model_id": "f0ad3176e67495b3c0f08d8621a8146c",
+  "file_size": 164667314,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "voice"
+  ],
+  "model_short_description": "RAVE model trained by IIL on the VocalSet singing voice dataset.",
+  "model_authors": [
+   "Intelligent Instruments Lab"
+  ]
+ },
+ {
+  "model_name": "RAVE.jvoice",
+  "model_id": "fbb0d10bfd36104a208af37c14c37fca",
+  "file_size": 71760178,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained on Japanese speech.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.kora",
+  "model_id": "f22ee0702e424ceaf40d64232d4c3c15",
+  "file_size": 83641262,
+  "is_input_mono": false,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE timbre transfer model trained on kora (african lute/harp)",
+  "model_authors": [
+   "Qosmo"
+  ]
+ },
+ {
+  "model_name": "RAVE.marimba",
+  "model_id": "f5ed9f1c796e1cc9d991a18d26b4a742",
+  "file_size": 26658478,
+  "is_input_mono": false,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "Stereo RAVE model trained on marimba sounds.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.megalodon",
+  "model_id": "8d348bed2c3196a4b5130aa70b75c52a",
+  "file_size": 26469242,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model that generates beastly bass sounds.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.MexSalterio",
+  "model_id": "8d02b46354e858b927ce445e12dd1f97",
+  "file_size": 89935214,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained by \ud835\udd25\ud835\udd22\ud835\udd35\ud835\udd2c\ud835\udd2f\ud835\udd20\ud835\udd26\ud835\udd30\ud835\udd2a\ud835\udd2c\ud835\udd30 on public domain Mexican Salterio sounds dating from late XIX century M\u00e9xico.",
+  "model_authors": [
+   "\ud835\udd25\ud835\udd22\ud835\udd35\ud835\udd2c\ud835\udd2f\ud835\udd20\ud835\udd26\ud835\udd30\ud835\udd2a\ud835\udd2c\ud835\udd30"
+  ]
+ },
+ {
+  "model_name": "RAVE.MultiVox",
+  "model_id": "8e9f052c5de689500b44a964d5326727",
+  "file_size": 83462062,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE",
+   "voice"
+  ],
+  "model_short_description": "AI model that converts any incoming sounds into voice sounds.",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.NASA",
+  "model_id": "92bbe999c5c0d8a2e5302a7373b266cf",
+  "file_size": 80684248,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained on NASA recordings",
+  "model_authors": [
+   "Antoine Caillon"
+  ]
+ },
+ {
+  "model_name": "RAVE.taiko",
+  "model_id": "81430fdb714c3377dc972a2c1eb468a9",
+  "file_size": 173839790,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE 2 model trained on Taiko (Japanese drums).",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ },
+ {
+  "model_name": "RAVE.VintageRadio",
+  "model_id": "e9f44fafd156fdcf11aef503e2b60f04",
+  "file_size": 80684248,
+  "is_input_mono": true,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "RAVE model trained on vintage radio songs",
+  "model_authors": [
+   "Antoine Caillon"
+  ]
+ },
+ {
+  "model_name": "RAVE.violin",
+  "model_id": "92dbdf249070b2cb27c22a8e52c6aa45",
+  "file_size": 83633662,
+  "is_input_mono": false,
+  "tags": [
+   "timbre transfer",
+   "RAVE"
+  ],
+  "model_short_description": "Stereo RAVE timbre transfer model trained on violin performances.",
+  "model_authors": [
+   "Naotake Masuda"
+  ]
+ },
+ {
+  "model_name": "temporalconv.reverb",
+  "model_id": "9cdf95dc2339a6b3d44820bdb4f8e80e",
+  "file_size": 3098280,
+  "is_input_mono": false,
+  "tags": [
+   "reverb"
+  ],
+  "model_short_description": "Temporal Convolution Reverb",
+  "model_authors": [
+   "Nao Tokui"
+  ]
+ }
+]
