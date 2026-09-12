@@ -359,7 +359,7 @@ function buildPage(): void {
     refs.camImage,
     refs.camStatus,
     el('div', { class: 'settings' },
-      ...boolSetting('camEnabled', 'camera', 'the master switch: off = the camera process idles and releases the camera, nothing camera-related is sent, drawn or shown'),
+      ...boolSetting('camEnabled', 'main switch', 'the camera is only opened while this is on (LED dark otherwise); off = nothing camera-related is sent, drawn or shown'),
       el('span', { class: 'k', text: 'which' }),
       el('span', { class: 'row' }, refs.camSelect, el('span', { class: 'hint', text: 'built-in, or an iPhone as Continuity Camera — the list comes from the camera process' })),
       el('span', { class: 'k', text: 'mode' }),

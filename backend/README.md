@@ -46,7 +46,7 @@ big enough to scan from across a table.
 | queen / queen after | who the queen bee is (♛ in the table crowns one by hand; a bee that flies into her takes the crown; with no queen, the phone that moved most is crowned after *queen after* seconds) |
 | iphone hotspot / wi-fi name / wi-fi password | the network the phones must be on — rendered as a *join this Wi-Fi* QR code on the dashboard and on the wall (step 1, before the join code). macOS hides the SSID from apps, so type it; the hotspot toggle only changes the hints and wording |
 | wall: wi-fi code / join code | show or hide each QR code on the wall — off once everyone is in, and the bees get the whole wall |
-| camera (on/off) / mode / detect rate / preview / osc camera / osc per person / cluster radius / mirror / wall coupling / coupling strength | the camera pipeline (see below): *field* for a full room, *people* for small rounds; *wall coupling* draws the animals toward the crowd's motion (field) or groups (people) |
+| camera main switch / mode / detect rate / preview / osc camera / osc per person / cluster radius / mirror / wall coupling / coupling strength | the camera pipeline (see below): *field* for a full room, *people* for small rounds; *wall coupling* draws the animals toward the crowd's motion (field) or groups (people) |
 | crowd shoves / shove strength | the motion under an animal pushes it along the camera's flow: *strength* × flow speed × the cell's energy (0.5 = a draught, 3 = a gale) |
 | hidden queen | game mode: no crown anywhere but this dashboard and OSC — the room has to find her by ear; the crown still passes on collision, silently |
 | osc global / osc mix | switch the meta-parameter families |
@@ -127,8 +127,9 @@ the server. Nobody in the picture is matched to a phone — the camera is a
 phone and in the hive without being in the picture.
 
 The camera process **starts with the server** (`./start.sh`; `--no-vision`
-leaves it out) and is switched on and off on the dashboard — *camera* at the
-top of its card; off releases the camera and sends nothing. Separately, for a
+leaves it out) but does **not touch the camera until the dashboard's main
+switch is on** — the LED stays dark; off again releases it and sends nothing.
+The switch starts off. Separately, for a
 second terminal or another machine:
 
 ```bash

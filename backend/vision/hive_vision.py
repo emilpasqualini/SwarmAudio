@@ -405,13 +405,14 @@ async def run(args: argparse.Namespace) -> None:
     cameras = list_cameras()
     if cameras:
         print("[vision] cameras: " + " · ".join(f"{i}: {n}" for i, n in enumerate(cameras)), flush=True)
-    cap = open_capture(args)
-    if cap is None:
-        print("[vision] no camera yet — will keep trying every few seconds", flush=True)
+    # The camera is not touched until the dashboard's main switch says so (its
+    # LED stays dark); standalone, without a backend, it starts right away.
+    cap = None
+    print("[vision] waiting for the dashboard's main switch before opening the camera" if not args.osc else "[vision] standalone: opening the camera", flush=True)
 
     tracker = Tracker(eps=args.eps)
     settings = {"preview": True, "mirror": bool(args.mirror), "camera": -1 if args.camera is None else int(args.camera), "reopen": False,
-                "mode": args.mode, "detectFps": args.detect_fps, "enabled": True}
+                "mode": args.mode, "detectFps": args.detect_fps, "enabled": bool(args.osc)}
     field = FlowField()
     density = Density()
     osc = OscOut(args.osc) if args.osc else None
@@ -479,18 +480,20 @@ async def run(args: argparse.Namespace) -> None:
     while True:
         t0 = time.time()
         if not settings["enabled"]:
-            # switched off on the dashboard: let the camera go (other apps can
-            # have it), keep the socket, and wait
-            if cap is not None and cap.isOpened():
-                cap.release()
-                print("[vision] camera off (dashboard) — idling", flush=True)
+            # switched off on the dashboard: let the camera go — the LED goes
+            # dark, other apps can have it — keep the socket, and wait
+            if cap is not None:
+                await loop.run_in_executor(None, cap.release)
+                cap = None
+                print("[vision] camera off (dashboard) — released", flush=True)
             await asyncio.sleep(0.5)
             continue
         if cap is None or not cap.isOpened():
-            cap = open_capture(args)
+            cap = await loop.run_in_executor(None, open_capture, args)
             if cap is None:
                 await asyncio.sleep(3)
                 continue
+            print("[vision] camera on", flush=True)
             field.prev = None
             last_t = time.time()
         if settings["reopen"]:

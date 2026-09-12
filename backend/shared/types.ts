@@ -152,7 +152,7 @@ export interface MixFeatures {
 }
 
 export interface VisionStatus {
-  /** The dashboard's master switch. */
+  /** The dashboard's main switch. */
   enabled: boolean;
   connected: boolean;
   /** Camera names as the camera process sees them, in index order. */
@@ -269,7 +269,7 @@ export interface Settings {
   /** Show the wi-fi / join QR codes on the wall. Switch them off once everyone is in. */
   wallWifiCode: boolean;
   wallJoinCode: boolean;
-  /** Camera: the master switch. Off = the camera process idles (camera released), nothing camera-related is sent or drawn. */
+  /** Camera: the main switch. Off (the default) = the camera is never opened / is released, nothing camera-related is sent or drawn. */
   camEnabled: boolean;
   /** Camera: send /hive/cam (frame + clusters) and /hive/cam/person. */
   oscCam: boolean;
@@ -323,7 +323,7 @@ export const DEFAULT_SETTINGS: Settings = {
   wifiHotspot: true,
   wallWifiCode: true,
   wallJoinCode: true,
-  camEnabled: true,
+  camEnabled: false,
   oscCam: true,
   oscCamPersons: true,
   camCoupling: false,
