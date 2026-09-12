@@ -120,7 +120,7 @@ async function join(): Promise<void> {
       else scheduleRender();
     },
     onLog: (line) => log.log(line),
-    onWall: (text) => swarmMap?.receive(text),
+    onWall: (text) => { swarmMap?.receive(text); scheduleRender(); },
   });
   transport.start();
   motion = startMotion(platform, onSample, () => { log.warn('no motion events'); showError('nodata'); });
@@ -306,7 +306,8 @@ function updateLive(): void {
   }
   if (queenLine) {
     const me = swarmMap?.iAmQueen ?? false;
-    queenLine.textContent = me ? t('queenYou') : t('queenHint');
+    const none = !swarmMap?.queen;
+    queenLine.textContent = me ? t('queenYou') : none ? t('queenNone') : t('queenHint');
     queenLine.classList.toggle('you', me);
   }
   if (statusLine) {
