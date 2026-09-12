@@ -136,8 +136,11 @@ terminal you start it from; allow it (System Settings → Privacy & Security →
 Camera). If nothing opens, the script says why; `--list-cameras` prints what
 it sees, and the dashboard's *camera* menu picks one by name — the built-in
 FaceTime camera or an iPhone as **Continuity Camera** (it appears as
-"<name> Camera" while it is nearby and unlocked; camera indices are not stable,
-so pick by name).
+"<name> Camera" while it is nearby, unlocked, with Wi-Fi and Bluetooth on —
+and **not while that iPhone is sharing its connection as a hotspot**: Apple
+disables Continuity Camera then. So the hotspot iPhone and the camera iPhone
+must be two different phones. Camera indices are not stable, so pick by name;
+the list refreshes every ~10 s).
 
 `--backend coreml` runs the model on the **Neural Engine** via Core ML
 (exported once from the `.pt`, ~1 min, no internet) instead of the GPU
