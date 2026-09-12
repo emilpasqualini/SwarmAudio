@@ -74,6 +74,11 @@
 
   --serif: 'Young Serif', Georgia, 'Times New Roman', serif;
   --body: 'Bitter', Georgia, serif;
+  /* Japanese: neither web font has CJK glyphs, so the system fonts take over
+     (Hiragino on iOS/macOS, Noto Sans CJK on Android) — offline, nothing to
+     ship. Latin runs still render in Bitter / Young Serif. */
+  --serif-ja: 'Young Serif', 'Hiragino Mincho ProN', 'Noto Serif JP', 'Noto Serif CJK JP', 'Yu Mincho', serif;
+  --body-ja: 'Bitter', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans CJK JP', 'Yu Gothic', sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --radius: 14px;
@@ -97,6 +102,9 @@ body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
 }
+/* The whole page in Japanese, or a single element (the wall's third line). */
+:lang(ja) { font-family: var(--body-ja); line-height: 1.7; }
+:lang(ja) h1, :lang(ja) h2, :lang(ja) h3 { font-family: var(--serif-ja); }
 
 h1, h2, h3 {
   font-family: var(--serif);
