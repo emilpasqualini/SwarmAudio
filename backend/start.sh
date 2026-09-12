@@ -60,6 +60,17 @@ if [ ! -d node_modules ] || [ package-lock.json -nt node_modules/.package-lock.j
   npm install --no-audit --no-fund
 fi
 
+# --- ports free? -------------------------------------------------------------
+# A HIVE already running (another terminal, an old background start) would
+# make the new one die with EADDRINUSE deep in Node — say it plainly instead.
+for PORT in "${HIVE_HTTPS_PORT:-8443}" "${HIVE_HTTP_PORT:-8080}"; do
+  if HOLDER="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -1)" && [ -n "$HOLDER" ]; then
+    echo "port $PORT is already in use by process $HOLDER ($(ps -o comm= -p "$HOLDER" 2>/dev/null))."
+    echo "  another HIVE is probably running — stop it with:  kill $HOLDER"
+    exit 1
+  fi
+done
+
 # --- client -------------------------------------------------------------------
 if [ "$DEV" = 0 ]; then
   echo "▸ building the phone app"
