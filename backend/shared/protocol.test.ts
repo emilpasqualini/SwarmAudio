@@ -35,4 +35,17 @@ assert.throws(() => decodeFrame(frame.subarray(0, frame.byteLength - 1)));
 const bad = new Uint8Array(frame); bad[0] = 9;
 assert.throws(() => decodeFrame(bad));
 
-console.log('protocol round-trip ok');
+// The wide OSC messages must match the schema they are documented by.
+import { SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from './osc-schema';
+import { sampleArgs, swarmArgs } from '../server/osc';
+import { decodePacket, encodeMessage } from '../server/osc-encode';
+const tagOf = (a: unknown): string => typeof a === 'string' ? 's' : typeof a === 'number' ? 'f' : 'i';
+const sample = { slot: 3, uid: 'abcd1234', t: 0, tClient: 0, acc: [0, 0, 9.81] as [number, number, number], gyro: [1, 2, 3] as [number, number, number], rel: [0, 0, 0] as [number, number, number], activity: 0.1, idle: 2 };
+assert.equal(sampleArgs(sample, 1.5).map(tagOf).join(''), typeTags(SAMPLE_FIELDS), '/hive/sample args must match SAMPLE_FIELDS');
+assert.equal(swarmArgs({ t: 0, count: 2, energy: 0.1, motion: 5, sync: 0.9 }, 1).map(tagOf).join(''), typeTags(SWARM_FIELDS), '/hive/swarm args must match SWARM_FIELDS');
+const [wide] = decodePacket(encodeMessage('/hive/sample', sampleArgs(sample, 1.5)));
+assert.equal(wide!.args.length, SAMPLE_FIELDS.length);
+assert.equal(wide!.args[1], 'abcd1234');
+assert.ok(Math.abs((wide!.args[5] as number) - 9.81) < 1e-5);
+
+console.log('protocol round-trip ok · osc schema matches');

@@ -87,6 +87,7 @@ export class Registry {
       const c = device.conditioner.process(s.acc, s.gyro, dtMs / 1000);
       const sample: Sample = {
         slot: device.slot,
+        uid: device.uid,
         t: now - (last.tClient - s.tClient),
         tClient: s.tClient,
         acc: s.acc,
@@ -115,7 +116,7 @@ export class Registry {
     let slot = 1;
     while (this.bySlot.has(slot)) slot++;
     const device: Device = {
-      id, slot, name, platform, transport,
+      id, uid: id.replace(/-/g, '').slice(0, 8), slot, name, platform, transport,
       hz: 0, interval: 0, joinedAt: now, lastSeen: now, last: null,
       conditioner: new Conditioner(this.condition),
     };

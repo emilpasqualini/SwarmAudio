@@ -28,15 +28,15 @@ export class Feed {
       this.clients.add(socket);
       // Current roster first, so a late subscriber knows who is already there.
       for (const d of registry.list()) {
-        socket.send(JSON.stringify({ type: 'join', slot: d.slot, platform: d.platform, name: d.name } satisfies FeedMessage));
+        socket.send(JSON.stringify({ type: 'join', slot: d.slot, uid: d.uid, platform: d.platform, name: d.name } satisfies FeedMessage));
       }
       socket.on('close', () => this.clients.delete(socket));
       socket.on('error', () => this.clients.delete(socket));
     });
 
-    registry.on('sample', (s) => this.broadcast({ type: 'sample', slot: s.slot, t: s.t, acc: s.acc, gyro: s.gyro, rel: s.rel, activity: s.activity }, true));
-    registry.on('join', (d) => this.broadcast({ type: 'join', slot: d.slot, platform: d.platform, name: d.name }));
-    registry.on('leave', (d) => this.broadcast({ type: 'leave', slot: d.slot }));
+    registry.on('sample', (s) => this.broadcast({ type: 'sample', slot: s.slot, uid: s.uid, t: s.t, acc: s.acc, gyro: s.gyro, rel: s.rel, activity: s.activity, idle: s.idle }, true));
+    registry.on('join', (d) => this.broadcast({ type: 'join', slot: d.slot, uid: d.uid, platform: d.platform, name: d.name }));
+    registry.on('leave', (d) => this.broadcast({ type: 'leave', slot: d.slot, uid: d.uid }));
     swarm.on((f) => this.broadcast({ type: 'swarm', ...f }, true));
   }
 

@@ -61,22 +61,20 @@ Same data, same rate, ~20 ms more latency.
 
 ## OSC
 
-All addresses, all targets, one bundle per sample:
+The protocol is documented in **[docs/OSC.md](docs/OSC.md)** — generated from
+[`shared/osc-schema.ts`](shared/osc-schema.ts), the same tables the dashboard's
+*OSC protocol* card shows, so the three cannot disagree. In one breath:
 
 ```
-/hive/dev/<slot>/acc    f f f    m/s², gravity included; flat phone ≈ (0, 0, 9.81) on iOS *and* Android
-/hive/dev/<slot>/gyro   f f f    °/s about x, y, z
-/hive/dev/<slot>/mag    f f      |acc|  |gyro|
-/hive/dev/<slot>/join   s i      platform, slot
-/hive/dev/<slot>/leave  i        slot
-/hive/swarm/count       i        devices                    ┐
-/hive/swarm/energy      f        mean |acc − g|  (m/s²)     │ 30 Hz
-/hive/swarm/motion      f        mean |gyro|     (°/s)      │
-/hive/swarm/sync        f        0..1, 1 = all turning alike┘
-/hive/ping              i        from the dashboard's Ping button
+/hive/sample   i slot · s uid · f t · acc xyz · rel xyz · gyro xyz · activity · idle · |acc| |rel| |gyro|   ~60 Hz per phone
+/hive/swarm    f t · i count · f energy · f motion · f sync                                                  swarm rate (30 Hz)
+/hive/join     i slot · s uid · s name · s platform        /hive/leave  i slot · s uid
+/hive/roster   i count · (i slot · s uid · s name)…         /hive/schema i version                            every second
+/hive/dev/<slot>/acc|rel|gyro|activity|mag                  the same per-sample data, one small message each
 ```
 
-Slots are small integers, reused after a device leaves, so `route 1 2 3` works.
+`uid` is stable per phone; `slot` is 1..N per session. Fields are only ever
+appended. Each family can be switched off on the dashboard.
 
 ## Team setup — receiving on another laptop
 
@@ -86,8 +84,8 @@ Slots are small integers, reused after a device leaves, so `route 1 2 3` works.
    Press **Ping**; your receiver should print `/hive/ping`.
 3. Receive:
    - **Pd:** open [`examples/hive-receive.pd`](examples/hive-receive.pd)
-     (`netreceive -u -b 9001 → oscparse → list trim → route hive …`).
-   - **Max:** `[udpreceive 9001]` → `[route /hive/dev/1/acc]`.
+     (`netreceive -u -b 9000 → oscparse → list trim → route hive → route sample → unpack`).
+   - **Max:** `[udpreceive 9001]` → `[route /hive/sample]` → `[unpack i s f f f …]`.
    - **SuperCollider:** `thisProcess.openUDPPort(9001); OSCFunc.trace(true);`
    - **Python, OSC:** `python3 examples/osc_listen.py 9001` (no dependencies).
    - **Python, raw JSON:** `pip install websockets`, then
@@ -128,6 +126,8 @@ carries it. This is Web Audio in the browser — a check, not the installation.
 
 ```
 shared/protocol.ts   binary frame: 12-byte header + n × 7 float32   (npm run protocol:test)
+shared/osc-schema.ts the OSC protocol as data → docs/OSC.md (npm run docs:osc) + dashboard card
+server/condition.ts  per-device smoothing, adaptive zero (rel), activity
 server/              ingest (ws + POST) · registry · osc fan-out · targets · settings · store · swarm · feed · monitor · simulate
 start.sh             the one command
 client/src/          phone app (main, sensors, transport, i18n) · dashboard (monitor, tones) · theme.css

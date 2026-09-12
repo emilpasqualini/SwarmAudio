@@ -307,6 +307,13 @@ dl.info dd { margin: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
   h1 { font-size: 1.7rem; }
 }
 
+table.schema td, table.schema th { padding: 5px 8px; font-size: 0.82rem; }
+table.schema code { font-family: var(--mono); font-size: 0.8rem; color: var(--accent); }
+details > summary { cursor: pointer; list-style: none; padding: 6px 0; }
+details > summary::before { content: '▸ '; color: var(--text-faint); }
+details[open] > summary::before { content: '▾ '; }
+pre.snippet { margin: 0; padding: 12px; background: var(--surface-raised); border-radius: 8px; font-family: var(--mono); font-size: 0.75rem; line-height: 1.5; overflow-x: auto; color: var(--text-dim); }
+
 /* --- the wall (projected) ------------------------------------------------- */
 
 body.wall { overflow: hidden; height: 100vh; }
