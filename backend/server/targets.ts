@@ -4,27 +4,18 @@
 //
 //  The list of machines that receive OSC, and its persistence.
 //
-//  Teammates add their laptop from the dashboard; the list survives a restart
-//  via hive.config.json so the team's setup is not rebuilt every morning.
+//  Teammates add their laptop from the dashboard; the list lives in the
+//  Store (hive.config.json) so the team's setup is not rebuilt every morning.
 //
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { OscTarget } from '../shared/types';
+import type { Store } from './store';
 
 export class Targets {
-  private list: OscTarget[] = [];
   private readonly changed: (() => void)[] = [];
 
-  constructor(private readonly file: string, initial: string) {
-    if (existsSync(file)) {
-      try {
-        const parsed = JSON.parse(readFileSync(file, 'utf8')) as { targets?: OscTarget[] };
-        this.list = (parsed.targets ?? []).map((t) => ({ ...t, sent: 0, error: null }));
-      } catch (err) {
-        console.warn(`[hive] could not read ${file}: ${(err as Error).message}`);
-      }
-    }
+  constructor(private readonly store: Store, initial: string) {
     if (this.list.length === 0) {
       for (const spec of initial.split(',')) {
         const parsed = parseHostPort(spec.trim());
@@ -33,6 +24,9 @@ export class Targets {
       this.save();
     }
   }
+
+  private get list(): OscTarget[] { return this.store.targets; }
+  private set list(v: OscTarget[]) { this.store.targets = v; }
 
   onChange(fn: () => void): void { this.changed.push(fn); }
 
@@ -71,8 +65,7 @@ export class Targets {
   }
 
   private save(): void {
-    const targets = this.list.map(({ id, label, host, port, enabled }) => ({ id, label, host, port, enabled }));
-    writeFileSync(this.file, JSON.stringify({ targets }, null, 2) + '\n');
+    this.store.save();
     for (const fn of this.changed) fn();
   }
 }

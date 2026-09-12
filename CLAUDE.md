@@ -19,6 +19,8 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
   Comments explain *why* (see the file headers); match that style.
 - Do not add the `osc` npm package (pulls a vulnerable `ws`); OSC encoding is in
   `backend/server/osc-encode.ts`.
+- Runtime configuration belongs on the dashboard (`/api/settings`, `/api/targets`,
+  persisted in `hive.config.json`), not in new env vars — only ports are env.
 - Never commit `backend/certs/`, `backend/dist/`, `backend/hive.config.json`
   (already gitignored).
 - Python helpers for consumers live in `backend/examples/` and must run with
@@ -29,8 +31,9 @@ backend/     Node/TypeScript server + phone web app + dashboard   (Emil)
 ## Quick start
 
 ```bash
-cd backend && npm install && npm run dev          # QR code + dashboard at http://localhost:8080/monitor
-HIVE_SIMULATE=3 npm start                          # three fake phones, no hardware needed
+cd backend && ./start.sh                           # QR code + dashboard at http://localhost:8080/monitor
+./start.sh --sim 3                                 # three fake phones, no hardware needed
+./start.sh --dev                                   # rebuild the phone app on save
 python3 examples/osc_listen.py 9000                # see what the installation receives
 ```
 
