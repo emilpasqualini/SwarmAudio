@@ -1,0 +1,302 @@
+/*
+ *  theme.css
+ *  HIVE
+ *
+ *  Taken from SCSS_web/src/theme.css, which was matched to emilpasqualini.eu
+ *  by reading the live site's computed styles: black page, accent #F2B8B4,
+ *  Young Serif 400 for headings, Bitter for body text, pill buttons at
+ *  border-radius 300px with the accent as fill and black text.
+ *
+ *  Two differences. The fonts are self-hosted, because the hackathon venue
+ *  may have no internet and a phone that cannot reach Google Fonts would fall
+ *  back to Georgia. And there is a slot palette: every device in the swarm
+ *  gets a colour, so a person can find their own bar on the dashboard.
+ */
+
+@font-face {
+  font-family: 'Young Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/YoungSerif-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Young Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/YoungSerif-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Bitter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/fonts/Bitter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Bitter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('/fonts/Bitter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  --accent: #f2b8b4;
+  --bg: #000000;
+  --surface: #0e0e10;
+  --surface-raised: #17171a;
+  --hairline: rgba(255, 255, 255, 0.1);
+  --text: #ffffff;
+  --text-dim: rgba(255, 255, 255, 0.62);
+  --text-faint: rgba(255, 255, 255, 0.38);
+  --warning: #f0ba4d;
+  --error: #ef6b6b;
+  --ok: #7fd1a8;
+
+  /* Slot colours: the accent's neighbours around the wheel, all at the same
+     lightness so no device looks "more important". Slot n uses n mod 10. */
+  --slot-0: #f2b8b4;
+  --slot-1: #f2cfa6;
+  --slot-2: #e6e0a0;
+  --slot-3: #b8e0b0;
+  --slot-4: #a6dfd2;
+  --slot-5: #a9cdf0;
+  --slot-6: #bdb8f2;
+  --slot-7: #dcb4ec;
+  --slot-8: #f0b4d6;
+  --slot-9: #d9d9d9;
+
+  --serif: 'Young Serif', Georgia, 'Times New Roman', serif;
+  --body: 'Bitter', Georgia, serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius: 14px;
+  --pill: 300px;
+  --gap: 18px;
+  --measure: 720px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; }
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+h1, h2, h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+h1 { font-size: 1.9rem; color: var(--accent); }
+h2 { font-size: 1.15rem; }
+p { margin: 0; }
+a { color: var(--accent); }
+
+main {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: 28px 20px 0;
+}
+main.wide { max-width: 1100px; }
+
+/* --- structure ----------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.section-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 8px 4px;
+}
+
+.stack { display: flex; flex-direction: column; gap: var(--gap); }
+.row { display: flex; align-items: center; gap: 12px; }
+.row.between { justify-content: space-between; }
+.row.wrap { flex-wrap: wrap; }
+.grow { flex: 1 1 auto; min-width: 0; }
+.center { text-align: center; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
+@media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* --- controls ------------------------------------------------------------ */
+
+button, select, input {
+  font-family: inherit;
+  font-size: 1rem;
+  color: inherit;
+}
+
+.pill {
+  border: 0;
+  border-radius: var(--pill);
+  padding: 13px 30px;
+  background: var(--accent);
+  color: #000;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.06s ease;
+  white-space: nowrap;
+}
+.pill:hover:not(:disabled) { opacity: 0.85; }
+.pill:active:not(:disabled) { transform: scale(0.98); }
+.pill:disabled { opacity: 0.35; cursor: default; }
+.pill.quiet {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--hairline);
+}
+.pill.small { padding: 7px 16px; font-size: 0.85rem; }
+.pill.big { padding: 18px 40px; font-size: 1.15rem; width: 100%; }
+.pill.on { background: var(--accent); color: #000; border-color: var(--accent); }
+
+input[type="text"] {
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  outline: none;
+}
+input[type="text"]:focus { border-color: var(--accent); }
+
+/* The language switch: two quiet pills fused into one control. */
+.segmented { display: inline-flex; border: 1px solid var(--hairline); border-radius: var(--pill); overflow: hidden; }
+.segmented button {
+  border: 0; background: transparent; color: var(--text-dim);
+  padding: 7px 16px; cursor: pointer; font-size: 0.85rem;
+}
+.segmented button.on { background: var(--accent); color: #000; }
+
+/* --- the swarm ------------------------------------------------------------ */
+
+.slot-badge {
+  font-family: var(--serif);
+  font-size: 4.5rem;
+  line-height: 1;
+  text-align: center;
+  color: var(--slot);
+}
+.slot-badge small { display: block; font-family: var(--body); font-size: 0.85rem; color: var(--text-faint); margin-top: 6px; }
+
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--slot, var(--accent)); flex: 0 0 auto; }
+
+/* --- bars ---------------------------------------------------------------- */
+
+.bar {
+  height: 8px;
+  border-radius: var(--pill);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: var(--pill);
+  transition: width 0.25s ease;
+}
+
+/* Signed bar: zero in the middle, fills left or right. No transition — the
+   bars follow a 60 Hz sensor, and easing would only smear it. */
+.axes { display: grid; grid-template-columns: auto 1fr auto; gap: 8px 12px; align-items: center; }
+.axes .name { font-size: 0.8rem; color: var(--text-faint); font-family: var(--mono); }
+.axes .value { font-size: 0.8rem; color: var(--text-dim); font-family: var(--mono); font-variant-numeric: tabular-nums; min-width: 5.5ch; text-align: right; }
+.sbar { position: relative; height: 10px; background: var(--surface-raised); border-radius: var(--pill); overflow: hidden; }
+.sbar::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--hairline); }
+.sbar > span { position: absolute; top: 0; bottom: 0; background: var(--slot, var(--accent)); }
+.sbar.gyro > span { opacity: 0.75; }
+
+/* Dashboard mini bars: six thin lines per device. */
+.mini { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; width: 100%; max-width: 220px; }
+.mini .sbar { height: 6px; }
+
+/* --- tables (dashboard) -------------------------------------------------- */
+
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th { text-align: left; font-weight: 400; font-size: 0.72rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--text-faint); padding: 6px 10px; border-bottom: 1px solid var(--hairline); }
+td { padding: 9px 10px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.table-wrap { overflow-x: auto; }
+
+/* --- status -------------------------------------------------------------- */
+
+.status { font-size: 0.85rem; color: var(--text-dim); display: flex; gap: 14px; flex-wrap: wrap; }
+.status .k { color: var(--text-faint); }
+.status .ok { color: var(--ok); }
+.status .warn { color: var(--warning); }
+.status .fail { color: var(--error); }
+
+.big-number { font-family: var(--serif); font-size: 2.4rem; line-height: 1; }
+.big-number small { font-family: var(--body); font-size: 0.8rem; color: var(--text-faint); display: block; margin-top: 4px; }
+
+/* --- the log strip ------------------------------------------------------- */
+
+.log {
+  position: sticky;
+  bottom: 0;
+  margin-top: 26px;
+  padding: 10px 20px;
+  background: rgba(0, 0, 0, 0.86);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--hairline);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-faint);
+  max-height: 6.6em;
+  overflow: hidden;
+}
+.log .step { color: var(--accent); }
+.log .warn { color: var(--warning); }
+.log .fail { color: var(--error); }
+
+/* --- odds and ends ------------------------------------------------------- */
+
+.note { font-size: 0.85rem; color: var(--text-dim); }
+.note.warn { color: var(--warning); }
+.note.fail { color: var(--error); }
+.credit { text-align: center; font-size: 0.8rem; color: var(--text-faint); padding: 22px 0 8px; }
+.credit a { color: var(--accent); text-decoration: none; }
+.credit a:hover { text-decoration: underline; }
+
+.qr { display: grid; place-items: center; }
+.qr canvas, .qr img { width: 100%; max-width: 320px; height: auto; border-radius: 8px; background: #fff; padding: 12px; }
+.url { font-family: var(--mono); font-size: 0.95rem; overflow-wrap: anywhere; }
+
+ol.steps { margin: 0; padding-left: 20px; font-size: 0.9rem; color: var(--text-dim); }
+ol.steps li { margin: 4px 0; }
+
+dl.info { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; }
+dl.info dt { color: var(--text-faint); font-size: 0.82rem; }
+dl.info dd { margin: 0; font-size: 0.82rem; overflow-wrap: anywhere; }
+
+@media (max-width: 560px) {
+  main { padding: 18px 14px 0; }
+  h1 { font-size: 1.7rem; }
+}

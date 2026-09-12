@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "backend", "run", "dev"],
+      "port": 8080
+    },
+    {
+      "name": "backend-sim",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["HIVE_SIMULATE=3", "npx", "--prefix", "backend", "tsx", "backend/server/index.ts"],
+      "port": 8080
+    }
+  ]
+}
