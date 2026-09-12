@@ -340,13 +340,13 @@ body.wall #app > * { transition: opacity 0.4s ease; }
 
 .wall-title { font-size: 3.2rem; line-height: 1; }
 .wall-count { font-family: var(--serif); font-size: 4rem; line-height: 1; color: var(--accent); }
-.wall-join { width: 240px; background: rgba(14, 14, 16, 0.85); backdrop-filter: blur(8px); }
-.wall-join .qr canvas { max-width: 200px; padding: 8px; }
-.wall-join .url { margin-top: 8px; font-size: 0.85rem; }
+.wall-join { width: 180px; padding: 12px; background: rgba(14, 14, 16, 0.85); backdrop-filter: blur(8px); }
+.wall-join .qr canvas { max-width: 150px; padding: 6px; }
+.wall-join .url { margin-top: 6px; font-size: 0.7rem; word-break: break-all; }
 /* With a wi-fi card the join card moves right to make room: 1 wi-fi, 2 join. */
 .wall-wifi { z-index: 3; }
 .wall-wifi .url .k { color: var(--text-faint); font-family: var(--body); }
-body.has-wifi .wall-join:not(.wall-wifi) { left: 270px; }
+body.has-wifi .wall-join:not(.wall-wifi) { left: 200px; }
 .wall-steps { margin-top: 6px; font-size: 0.72rem; }
 .wall-swarm { display: flex; gap: 22px; }
 .wall-stat .v { display: block; font-family: var(--serif); font-size: 1.8rem; line-height: 1; }

@@ -56,7 +56,7 @@ const refs = {
   wifiQr: el('div', { class: 'qr' }),
   wifiName: el('div', { class: 'url' }),
   join: el('div', { class: 'wall-corner bottom-left card wall-join' }),
-  joinLabel: el('div', { class: 'section-label', text: 'join · mitmachen · 参加' }),
+  joinLabel: el('div', { class: 'section-label', text: 'join · 参加' }),
   qr: el('div', { class: 'qr' }),
   url: el('div', { class: 'url' }),
   count: el('div', { class: 'wall-count', text: '0' }),
@@ -77,9 +77,6 @@ refs.join.append(
   refs.joinLabel,
   refs.qr,
   refs.url,
-  el('div', { class: 'note wall-steps', text: 'scan · accept the certificate warning · tap join.' }),
-  el('div', { class: 'note wall-steps', text: 'scannen · zertifikatswarnung bestätigen · beitreten tippen.' }),
-  el('div', { class: 'note wall-steps', lang: 'ja', text: 'スキャン · 証明書の警告で「このWebサイトを閲覧」 · 「群れに参加する」をタップ' }),
 );
 
 // Slot colours resolved once from the stylesheet, since canvas cannot read CSS variables.
@@ -120,7 +117,7 @@ function drawQr(): void {
   if (!hello) return;
   const c = document.createElement('canvas');
   refs.qr.replaceChildren(c);
-  void QRCode.toCanvas(c, hello.qrUrl, { width: 200, margin: 0, color: { dark: '#000000', light: '#ffffff' } });
+  void QRCode.toCanvas(c, hello.qrUrl, { width: 150, margin: 0, color: { dark: '#000000', light: '#ffffff' } });
   refs.url.textContent = hello.qrUrl;
 }
 
@@ -134,19 +131,16 @@ function drawWifi(): void {
   wifiDrawn = text + wifiHotspot;
   refs.wifi.hidden = !text;
   document.body.classList.toggle('has-wifi', !!text);
-  refs.joinLabel.textContent = text ? '2 · join · mitmachen · 参加' : 'join · mitmachen · 参加';
+  refs.joinLabel.textContent = text ? '2 · join · 参加' : 'join · 参加';
   if (!text) return;
   refs.wifi.replaceChildren(
-    el('div', { class: 'section-label', text: wifiHotspot ? '1 · hotspot first · zuerst hotspot · まずホットスポット' : '1 · wi-fi first · zuerst wlan · まずWi-Fi' }),
+    el('div', { class: 'section-label', text: wifiHotspot ? '1 · hotspot' : '1 · wi-fi' }),
     refs.wifiQr,
     refs.wifiName,
-    el('div', { class: 'note wall-steps', text: 'scan with the camera · join · then the code on the right' }),
-    el('div', { class: 'note wall-steps', text: 'mit der kamera scannen · verbinden · dann den code rechts' }),
-    el('div', { class: 'note wall-steps', lang: 'ja', text: 'カメラで読み取る · 接続 · 次に右のコード' }),
   );
   const c = document.createElement('canvas');
   refs.wifiQr.replaceChildren(c);
-  void QRCode.toCanvas(c, text, { width: 200, margin: 0, color: { dark: '#000000', light: '#ffffff' } });
+  void QRCode.toCanvas(c, text, { width: 150, margin: 0, color: { dark: '#000000', light: '#ffffff' } });
   // name and password in words too, for whoever would rather type
   refs.wifiName.replaceChildren(
     el('div', {}, el('span', { class: 'k', text: 'wi-fi  ' }), wifiSsid),
