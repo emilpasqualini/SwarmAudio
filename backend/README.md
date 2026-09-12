@@ -317,16 +317,22 @@ clusters and flow:
 
 ### The wall's flight model ([client/src/visuals/bees.ts](client/src/visuals/bees.ts))
 
-Not a feature, but it is what the phones see and `/hive/mix` reads. Each animal
-has a heading $\theta$ and a speed $s$ in world units (height = 1) per second:
+Not a feature, but it is what the phones see and `/hive/mix` reads. The phone
+is a joystick: $\mathbf j=\mathrm{clip}(\mathbf{rel}_{x,y}/4.9,-1,1)$, with the
+$y$ axis flipped so tipping the top edge away means *up* on the wall, rotated
+by the yaw the phone has accumulated, $\psi=\int\mathrm{turn}\,dt$ (turn
+around and your "forward" turns with you). Each animal has a heading $\theta$
+and a speed $s$ in world units (height = 1) per second:
 
-$$\dot\theta = \mathrm{turn}\cdot\tfrac{\pi}{180} + 2.2\,\mathrm{tilt}_x + \text{edge} + \text{separation} + \text{crowd},\qquad
-s\to 0.16\cdot\min\!\big(1,\max(1.4\,\mathrm{act},\ \mathrm{tilt}_y)\big)\ (\tau=0.4\,\text{s}),$$
+$$\dot\theta=\dot\psi+7\,\mathrm{wrap}(\angle\mathbf j-\theta)\,[\|\mathbf j\|>0.08]+\text{edge}+\text{separation}+\text{crowd},\qquad
+s\to 0.24\cdot\begin{cases}\|\mathbf j\| & \|\mathbf j\|>0.08\\ \min(1,1.4\,\mathrm{act}) & \text{flat}\end{cases}\ (\tau=0.25\,\text{s}).$$
 
-with $\mathrm{tilt}=\mathrm{clip}(\mathbf{rel}_{x,y}/4.9,-1,1)$. Edges push
-back with $(1-d/0.09)^2$ inside a 9 % margin; neighbours within 0.05 turn each
-other away; with *wall coupling* the nearest camera cluster turns the animal
-toward it with strength $\le$ the tilt's. Deterministic: same input, same path.
+Edges push back with $(1-d/0.09)^2$ inside a 9 % margin; neighbours within
+0.05 turn each other away; with *wall coupling* the nearest camera cluster
+turns the animal toward it with strength $\le$ the tilt's. Deterministic: same
+input, same path. Note the adaptive zero: a tilt *held* still for a couple of
+seconds becomes the new zero and the animal slows to a halt — only change
+moves it.
 
 ## The wall (`/wall`) and the queen
 

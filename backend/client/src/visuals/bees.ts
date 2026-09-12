@@ -8,15 +8,14 @@
 //  its speed), and when it rests it either lies down or grazes — chosen at
 //  random each time it comes to rest. The queen sheep is bigger and black.
 //
-//  A bee has a heading and a speed, and the phone steers it: how much the phone
-//  moves sets the speed and how hard the wings beat, turning the phone about
-//  the vertical turns the bee's heading by the same angle (turn around yourself
-//  and your bee turns around too), and tilting steers it as well. Nothing is
-//  integrated straight from the sensors into a position, so two people walking
-//  with the phone in a pocket do the same *kind* of thing — a steady, wobbling
-//  advance — while the small differences in their gait, their hip rotation and
-//  how the phone sits bend their paths differently. Same input, same path,
-//  always: the model is deterministic.
+//  The phone is a joystick: tilt it and the animal goes that way on the wall —
+//  tip the top edge away and it goes up, tip right and it goes right, the
+//  further the faster. Turning the phone about the vertical (turning around
+//  yourself) rotates that control frame, so "forward" follows your body. With
+//  the phone flat, moving about — walking, shaking — sends the animal ahead
+//  along its heading at a speed set by the activity. Nothing is integrated
+//  straight from the sensors into a position, and the same input always gives
+//  the same path: the model is deterministic.
 //
 //  The edge is soft. Inside a margin a bee is nudged back toward the room and
 //  gently turned that way, harder the farther out it is, so it drifts back
@@ -53,10 +52,12 @@ import type { Frame, Visual } from './visual';
 const TILT_FULL = 9.81 / 2;       // m/s² of rel that counts as full tilt (45°)
 const IDLE_AFTER = 1.2;           // seconds at rest before the bee starts drifting home
 const HOME_TAU = 4.0;             // how slowly a resting bee drifts back to the centre
-const SPEED = 0.16;               // world units / s at full activity
-const SPEED_TAU = 0.4;            // how quickly speed follows activity
-const STEER_TILT = 2.2;           // rad/s of heading change at full sideways tilt
-const STEER_TURN = 1.0;           // bee heading per phone rotation about the vertical (1 = one to one)
+const SPEED = 0.24;               // world units / s at full tilt or activity
+const SPEED_TAU = 0.25;           // how quickly speed follows the phone
+const STEER_TILT = 2.2;           // rad/s the camera coupling may turn an animal at most
+const TURN_RATE = 7;              // rad/s the heading swings toward where the tilt points
+const DEADZONE = 0.08;            // tilt below this (of full) is "flat"
+const STEER_TURN = 1.0;           // control frame per phone rotation about the vertical (1 = one to one)
 const COMFORT = 0.09;             // margin (in units of the shorter side) inside which the edge pushes back
 const EDGE_PUSH = 0.14;           // world units / s of push at the very edge (SPEED is 0.16)
 const EDGE_STEER = 2.5;           // rad/s of turning back toward the room at the very edge
@@ -79,6 +80,7 @@ interface Bee {
   name: string;
   x: number; y: number;           // world position
   heading: number;                // radians, 0 = right, clockwise on screen
+  yaw: number;                    // radians, how far the phone has turned about the vertical since joining
   speed: number;                  // world units per second
   wingPhase: number;              // radians, advances with the beat frequency (bees) or the gait (sheep)
   idleAnim: 'lie' | 'graze' | null;   // sheep: what it does at rest, picked when it comes to rest
@@ -234,7 +236,7 @@ export class Bees implements Visual {
         slot: msg.slot, uid: msg.uid, name: msg.name,
         x, y,
         heading: Math.atan2(0.5 - y, this.aspect / 2 - x),   // set off toward the middle
-        speed: 0, wingPhase: Math.random() * Math.PI * 2, idleAnim: null, restingSince: 0, facing: 1,
+        yaw: 0, speed: 0, wingPhase: Math.random() * Math.PI * 2, idleAnim: null, restingSince: 0, facing: 1,
         tiltX: 0, tiltY: 0, activity: 0, turn: 0, idle: 0,
         alpha: 0, leaving: false, trail: [],
       });
@@ -318,11 +320,17 @@ export class Bees implements Visual {
       const rWorld = r * 2 / height;         // a bee is about 2 r long
 
       // --- steering -----------------------------------------------------------
-      // The phone's own rotation about the vertical turns the bee one to one;
-      // sideways tilt bends the path. Each edge, on its own, pushes the bee
-      // back inward and turns it a little that way — per axis, so a corner
-      // pushes diagonally out and the bee cannot get wedged facing the wall.
-      let dHeading = b.turn * (Math.PI / 180) * STEER_TURN + b.tiltX * STEER_TILT;
+      // The tilt is a joystick in the phone's own frame; the phone's rotation
+      // about the vertical turns that frame (and, with no tilt, the heading).
+      // Then each edge, on its own, pushes the animal back inward and turns it
+      // a little that way — per axis, so a corner pushes diagonally out.
+      const dYaw = b.turn * (Math.PI / 180) * STEER_TURN * dt;
+      b.yaw = wrapAngle(b.yaw + dYaw);
+      const jx = b.tiltX * Math.cos(b.yaw) - (-b.tiltY) * Math.sin(b.yaw);   // tip right → right, tip away → up
+      const jy = b.tiltX * Math.sin(b.yaw) + (-b.tiltY) * Math.cos(b.yaw);
+      const joy = Math.min(1, Math.hypot(jx, jy));
+      let dHeading = dYaw / Math.max(dt, 1e-3);
+      if (joy > DEADZONE) dHeading += wrapAngle(Math.atan2(jy, jx) - b.heading) * TURN_RATE;
       const outL = Math.max(0, 1 - b.x / COMFORT), outR = Math.max(0, 1 - (w - b.x) / COMFORT);
       const outT = Math.max(0, 1 - b.y / COMFORT), outB = Math.max(0, 1 - (1 - b.y) / COMFORT);
       const pushX = outL * outL - outR * outR, pushY = outT * outT - outB * outB;
@@ -358,13 +366,9 @@ export class Bees implements Visual {
       if (running) b.heading = wrapAngle(b.heading + dHeading * dt);   // paused: hover in place, facing where you were
 
       // --- speed and wings --------------------------------------------------------
-      // Activity drives both, and so does a held tilt — a slow, deliberate lean
-      // moves the bee even when nothing shakes. Tilting forward hurries,
-      // tilting back holds.
-      // Kept simple on purpose: tilt forward = go, tilt sideways = turn,
-      // moving about = go. Tilting back does nothing but stop.
+      // Tilt sets the speed (the further, the faster); flat, activity does.
       const resting = b.idle > IDLE_AFTER || !running;
-      const drive = Math.min(1, Math.max(b.activity * 1.4, b.tiltY));
+      const drive = joy > DEADZONE ? joy : Math.min(1, b.activity * 1.4);
       const target = resting ? 0 : SPEED * drive;
       b.speed += (target - b.speed) * lerpFactor(SPEED_TAU, dt);
       b.x += Math.cos(b.heading) * b.speed * dt;
