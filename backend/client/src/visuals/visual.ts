@@ -24,6 +24,10 @@ export interface Frame {
   queen: string;
   /** Tell the server a bee has taken the crown. */
   crown: (uid: string) => void;
+  /** false: gathered but not started — nothing moves, no crown changes hands. */
+  running: boolean;
+  /** Changes on Reset: re-spawn everyone. */
+  round: number;
 }
 
 export interface Visual {

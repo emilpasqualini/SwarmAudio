@@ -60,6 +60,7 @@ const refs = {
   qr: el('div', { class: 'qr' }),
   url: el('div', { class: 'url' }),
   count: el('div', { class: 'wall-count', text: '0' }),
+  paused: el('div', { class: 'note', text: 'gathering · sammeln · 集合中', hidden: true }),
   swarm: el('div', { class: 'wall-swarm' }),
 };
 
@@ -68,7 +69,7 @@ root.append(
     el('h1', { class: 'wall-title', text: 'HIVE' }),
     el('div', { class: 'note', text: 'swarm audio' }),
   ),
-  el('div', { class: 'wall-corner top-right' }, refs.count, el('div', { class: 'note', text: 'in the swarm · im schwarm · 参加中' })),
+  el('div', { class: 'wall-corner top-right' }, refs.count, el('div', { class: 'note', text: 'in the swarm · im schwarm · 参加中' }), refs.paused),
   refs.wifi,
   refs.join,
   el('div', { class: 'wall-corner bottom-right' }, refs.swarm),
@@ -151,6 +152,7 @@ function drawWifi(): void {
 function drawState(): void {
   if (!state) return;
   drawWifi();
+  refs.paused.hidden = state.settings.running;
   refs.count.textContent = String(state.swarm.count);
   refs.swarm.replaceChildren(
     stat('energy', state.swarm.energy.toFixed(1)),
@@ -180,7 +182,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown });
+  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown, running: state?.settings.running ?? false, round: state?.settings.round ?? 0 });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

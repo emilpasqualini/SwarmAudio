@@ -82,6 +82,10 @@ export interface OscTarget {
 // --- runtime settings (editable on the dashboard, persisted) -----------------
 
 export interface Settings {
+  /** false: the swarm is gathered but nothing starts — bees hover, no queen race, phones wait. Start/Pause on the dashboard. */
+  running: boolean;
+  /** Bumped by Reset: a new round — queen cleared, tallies cleared, bees re-spawned. */
+  round: number;
   /** Rate of /hive/swarm/* messages. */
   swarmHz: number;
   /** A device silent for this long has left. */
@@ -119,6 +123,8 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  running: false,
+  round: 1,
   swarmHz: 30,
   deviceTimeoutMs: 3000,
   simulate: 0,

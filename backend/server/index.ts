@@ -52,7 +52,7 @@ const osc = new OscOut(targets, registry);
 const swarm = new Swarm(registry, store.settings.swarmHz);
 const settings = new SettingsController(store, registry, swarm, osc);
 const queen = new QueenKeeper(registry, settings);
-const wall = new WallState(store.settings.queenUid);
+const wall = new WallState(store.settings.queenUid, store.settings.running);
 
 const feed = new Feed(registry, swarm);
 const ingest = createIngest(registry, wall, log);
@@ -218,7 +218,10 @@ https.listen(config.httpsPort, '0.0.0.0', () => {
     queen.start();
     // The crown on the OSC side: an event when it moves, and once a second with the roster.
     let lastQueen = settings.current.queenUid;
+    let lastRunning = settings.current.running;
     settings.onChange(() => {
+      wall.setRunning(settings.current.running);
+      if (settings.current.running !== lastRunning) { lastRunning = settings.current.running; log(lastRunning ? 'started' : 'paused'); }
       const uid = settings.current.queenUid;
       if (uid === lastQueen) return;
       lastQueen = uid;

@@ -15,8 +15,8 @@
 
 export interface WallBee { uid: string; slot: number; x: number; y: number; h: number }
 
-/** The wire form phones receive: `{ v, q, b: [[uid, slot, x, y, h], …] }`. */
-export interface WallWire { v: number; q: string; b: [string, number, number, number, number][] }
+/** The wire form phones receive: `{ v, q, r, b: [[uid, slot, x, y, h], …] }` — r: running. */
+export interface WallWire { v: number; q: string; r: boolean; b: [string, number, number, number, number][] }
 
 export class WallState {
   private bees: WallBee[] = [];
@@ -24,12 +24,20 @@ export class WallState {
   /** Bumps on every set; phones are handed each version once. */
   version = 0;
   private queenUid = '';
+  private running = false;
   private wire = '';
   private readonly listeners: ((text: string) => void)[] = [];
 
-  constructor(queenUid: string) {
+  constructor(queenUid: string, running: boolean) {
     this.queenUid = queenUid;
-    this.encode();   // so phones learn who the queen is even before the wall reports any bees
+    this.running = running;
+    this.encode();   // so phones learn the state even before the wall reports any bees
+  }
+
+  setRunning(running: boolean): void {
+    if (running === this.running) return;
+    this.running = running;
+    this.encode();
   }
 
   onChange(fn: (text: string) => void): void { this.listeners.push(fn); }
@@ -59,7 +67,7 @@ export class WallState {
 
   private encode(): void {
     this.version++;
-    const w: WallWire = { v: this.version, q: this.queenUid, b: this.bees.map((b) => [b.uid, b.slot, b.x, b.y, b.h]) };
+    const w: WallWire = { v: this.version, q: this.queenUid, r: this.running, b: this.bees.map((b) => [b.uid, b.slot, b.x, b.y, b.h]) };
     this.wire = JSON.stringify(w);
     for (const fn of this.listeners) fn(this.wire);
   }

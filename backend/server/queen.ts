@@ -28,7 +28,7 @@ export class QueenKeeper {
 
   constructor(private readonly registry: Registry, private readonly settings: SettingsController) {
     registry.on('sample', (s, d) => {
-      if (this.settings.current.queenUid) return;
+      if (this.settings.current.queenUid || !this.settings.current.running) return;
       this.moved.set(s.uid, (this.moved.get(s.uid) ?? 0) + s.activity / Math.max(10, d.hz || 60));
     });
   }
@@ -45,6 +45,8 @@ export class QueenKeeper {
   private tick(now = Date.now()): void {
     const queen = this.settings.current.queenUid;
     const devices = this.registry.list();
+    // Paused: nobody is counted and nobody is crowned; the race starts with Start.
+    if (!this.settings.current.running) { this.vacantSince = null; this.moved.clear(); return; }
     if (queen) {
       this.vacantSince = null;
       this.moved.clear();

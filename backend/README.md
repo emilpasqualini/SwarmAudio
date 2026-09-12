@@ -33,6 +33,7 @@ big enough to scan from across a table.
 
 | dashboard | what |
 |---|---|
+| start / pause · reset | people can join while paused — bees hover, no queen race, phones say *waiting*. **start** lets it all go (movement, queen race, crown passing); **reset** clears the queen, re-spawns every bee and waits for start again. The server starts paused |
 | OSC targets | add/remove laptops (`host:port`), enable/disable, Ping, send counter, last error |
 | fake phones | 0–50 virtual devices through the real pipeline (also `--sim n`) |
 | swarm rate | Hz of `/hive/swarm/*` |
@@ -100,6 +101,9 @@ the join QR code. The swarm is drawn as bees: activity drives speed and wing
 beat, turning the phone about the vertical turns the bee, tilt steers; the
 edge pushes back softly, bees shrink as the swarm grows. Everything is the
 server's `rel` / `activity` / `turn`, so the wall shows what the OSC side hears.
+Movement is deliberately simple: tilt forward = go, tilt sideways = turn,
+moving about = go; tilting back stops. Until **start** on the dashboard the bees
+hover where they spawned.
 
 One bee is the **queen** — larger, golden, a halo. The server decides who
 (`queenUid`, `/hive/queen` on OSC): crowned by hand on the dashboard, or, while
