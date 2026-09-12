@@ -22,7 +22,7 @@ import type { VisionCluster, VisionFrame, VisionPerson, VisionStatus } from '../
 const STALE_MS = 2000;
 const MAX_PREVIEW = 512 * 1024;
 
-export interface VisionSettings { eps: number; mirror: boolean; preview: boolean }
+export interface VisionSettings { eps: number; mirror: boolean; preview: boolean; camera: number }
 
 const num = (v: unknown, lo = -1e9, hi = 1e9): number => {
   const n = Number(v);
@@ -35,7 +35,9 @@ export class VisionIn {
   private latest: VisionFrame | null = null;
   private lastAt = 0;
   private preview: Buffer | null = null;
-  private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true };
+  private settings: VisionSettings = { eps: 0.12, mirror: true, preview: true, camera: -1 };
+  private cameras: string[] = [];
+  private backend = '';
   /** Last position per tracker id, for velocities. */
   private readonly prev = new Map<number, { x: number; y: number; t: number }>();
   private lastSpread: { v: number; t: number } | null = null;
@@ -57,7 +59,14 @@ export class VisionIn {
           for (const fn of this.previewListeners) fn(buf);
           return;
         }
-        const frame = this.parse(String(data));
+        let raw: Record<string, unknown>;
+        try { raw = JSON.parse(String(data)) as Record<string, unknown>; } catch { return; }
+        if (raw['type'] === 'hello') {
+          this.cameras = Array.isArray(raw['cameras']) ? (raw['cameras'] as unknown[]).map(String).slice(0, 8) : [];
+          this.backend = String(raw['backend'] ?? '');
+          return;
+        }
+        const frame = this.parse(raw);
         if (!frame) return;
         this.motion(frame);
         this.latest = frame;
@@ -80,6 +89,8 @@ export class VisionIn {
     const f = this.current;
     return {
       connected: this.connected,
+      cameras: this.cameras,
+      backend: this.backend,
       fps: f?.fps ?? 0,
       count: f?.count ?? 0,
       clusters: f?.clusters.length ?? 0,
@@ -92,7 +103,7 @@ export class VisionIn {
 
   /** Cluster radius, mirror and preview flag; forwarded to the camera process. */
   configure(s: VisionSettings): void {
-    if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview) return;
+    if (s.eps === this.settings.eps && s.mirror === this.settings.mirror && s.preview === this.settings.preview && s.camera === this.settings.camera) return;
     this.settings = { ...s };
     if (this.client?.readyState === this.client?.OPEN) this.client?.send(JSON.stringify({ type: 'settings', ...this.settings }));
   }
@@ -147,9 +158,7 @@ export class VisionIn {
     f.occupancy = cells.size / 12;
   }
 
-  private parse(text: string): VisionFrame | null {
-    let raw: Record<string, unknown>;
-    try { raw = JSON.parse(text) as Record<string, unknown>; } catch { return null; }
+  private parse(raw: Record<string, unknown>): VisionFrame | null {
     if (raw['type'] !== 'frame') return null;
     const people: VisionPerson[] = Array.isArray(raw['people'])
       ? (raw['people'] as Record<string, unknown>[]).slice(0, 64).map((p) => ({

@@ -219,6 +219,53 @@ class OscOut:
             self.sock.sendto(osc_message("/hive/cam/person", [p["id"], p["x"], p["y"], p["depth"], float(p["armsUp"]), p["crouch"], p["energy"]]), self.addr)
 
 
+# --- camera ------------------------------------------------------------------------
+
+def list_cameras() -> list[str]:
+    """Camera names in AVFoundation order (macOS), so the dashboard can offer them by name."""
+    if sys.platform != "darwin":
+        return []
+    try:
+        import subprocess
+        out = subprocess.run(["system_profiler", "SPCameraDataType", "-json"], capture_output=True, text=True, timeout=10).stdout
+        return [c.get("_name", f"camera {i}") for i, c in enumerate(json.loads(out).get("SPCameraDataType", []))]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def open_capture(args: argparse.Namespace):
+    """The video file, or the first camera that opens. On a Mac the indices are
+    not stable — a paired iPhone (Continuity Camera) can sit at 0 while the
+    built-in one is 1 — so unless an index was given explicitly we try a few."""
+    if args.source is not None:
+        cap = cv2.VideoCapture(args.source)
+        if cap.isOpened():
+            return cap
+        print(f"[vision] cannot open {args.source!r}", file=sys.stderr)
+        return None
+    explicit = args.camera is not None and int(args.camera) >= 0
+    indices = [int(args.camera)] if explicit else [0, 1, 2, 3]
+    for i in indices:
+        cap = cv2.VideoCapture(i, cv2.CAP_AVFOUNDATION) if sys.platform == "darwin" else cv2.VideoCapture(i)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(args.width * 9 / 16))
+        ok, _ = cap.read() if cap.isOpened() else (False, None)
+        if ok:
+            print(f"[vision] camera {i} open", flush=True)
+            return cap
+        cap.release()
+    print(
+        "[vision] no camera could be opened.\n"
+        "  - macOS must allow the app you started this from to use the camera:\n"
+        "    System Settings → Privacy & Security → Camera → switch on Terminal (or iTerm, VS Code, …).\n"
+        "    If it is not listed, run:  tccutil reset Camera com.apple.Terminal   and start again — the prompt appears.\n"
+        "  - A paired iPhone can take index 0 while it is away; try  --camera 1\n"
+        "  - Or use a video:  --source clip.mp4",
+        file=sys.stderr,
+    )
+    return None
+
+
 # --- main loop -------------------------------------------------------------------
 
 async def run(args: argparse.Namespace) -> None:
@@ -232,20 +279,29 @@ async def run(args: argparse.Namespace) -> None:
         YOLO(MODEL_NAME)  # downloads into the cwd
         if os.path.exists(MODEL_NAME):
             os.replace(MODEL_NAME, model_path)
-    model = YOLO(model_path)
-    device = args.device
-    print(f"[vision] model {MODEL_NAME} on {device}", flush=True)
+    if args.backend == "coreml":
+        # Core ML runs on the Neural Engine and leaves the GPU to the wall. The
+        # package is exported once from the .pt (a minute, no internet needed).
+        pkg = model_path.replace(".pt", ".mlpackage")
+        if not os.path.isdir(pkg):
+            print("[vision] exporting the model to Core ML (once)…", flush=True)
+            YOLO(model_path).export(format="coreml", imgsz=args.imgsz, nms=False)
+        model = YOLO(pkg)
+        device = None
+    else:
+        model = YOLO(model_path)
+        device = args.backend
+    print(f"[vision] model {MODEL_NAME} via {args.backend}", flush=True)
 
-    source = int(args.camera) if args.source is None else args.source
-    cap = cv2.VideoCapture(source)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(args.width * 9 / 16))
-    if not cap.isOpened():
-        print(f"[vision] cannot open camera/source {source!r}", file=sys.stderr)
+    cameras = list_cameras()
+    if cameras:
+        print("[vision] cameras: " + " · ".join(f"{i}: {n}" for i, n in enumerate(cameras)), flush=True)
+    cap = open_capture(args)
+    if cap is None:
         sys.exit(1)
 
     tracker = Tracker(eps=args.eps)
-    settings = {"preview": True, "mirror": bool(args.mirror)}
+    settings = {"preview": True, "mirror": bool(args.mirror), "camera": -1 if args.camera is None else int(args.camera), "reopen": False}
     osc = OscOut(args.osc) if args.osc else None
     ws = None
     ws_lock = asyncio.Lock()
@@ -259,6 +315,7 @@ async def run(args: argparse.Namespace) -> None:
                     ws = conn
                     delay = 1.0
                     print(f"[vision] connected to {args.server}", flush=True)
+                    await conn.send(json.dumps({"type": "hello", "cameras": cameras, "backend": args.backend}))
                     async for message in conn:
                         if isinstance(message, bytes):
                             continue
@@ -270,7 +327,11 @@ async def run(args: argparse.Namespace) -> None:
                             tracker.eps = float(msg.get("eps", tracker.eps))
                             settings["mirror"] = bool(msg.get("mirror", settings["mirror"]))
                             settings["preview"] = bool(msg.get("preview", True))
-                            print(f"[vision] settings: eps={tracker.eps} mirror={settings['mirror']} preview={settings['preview']}", flush=True)
+                            wanted = int(msg.get("camera", -1))
+                            if args.source is None and wanted != settings["camera"]:
+                                settings["camera"] = wanted
+                                settings["reopen"] = True
+                            print(f"[vision] settings: eps={tracker.eps} mirror={settings['mirror']} preview={settings['preview']} camera={settings['camera']}", flush=True)
             except Exception as err:  # noqa: BLE001 — any network trouble: wait and retry
                 if ws is not None:
                     print(f"[vision] backend lost ({err.__class__.__name__}); retrying", flush=True)
@@ -290,6 +351,13 @@ async def run(args: argparse.Namespace) -> None:
 
     while True:
         t0 = time.time()
+        if settings["reopen"]:
+            # the dashboard picked another camera
+            settings["reopen"] = False
+            cap.release()
+            args.camera = settings["camera"]
+            cap = open_capture(args) or cap
+            tracker.people.clear()
         ok, frame = await loop.run_in_executor(None, cap.read)
         if not ok:
             if args.source is not None:  # a clip: loop it
@@ -302,7 +370,8 @@ async def run(args: argparse.Namespace) -> None:
         h, w = frame.shape[:2]
 
         def infer():
-            return model.track(frame, persist=True, classes=[0], device=device, verbose=False, imgsz=args.imgsz, conf=0.35, tracker="botsort.yaml")
+            kw = {"device": device} if device else {}
+            return model.track(frame, persist=True, classes=[0], verbose=False, imgsz=args.imgsz, conf=0.35, tracker="botsort.yaml", **kw)
         results = await loop.run_in_executor(None, infer)
         result = results[0]
 
@@ -358,7 +427,7 @@ async def run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="HIVE camera: people, poses, clusters → backend / OSC")
-    ap.add_argument("--camera", default=0, help="camera index (default 0 = FaceTime)")
+    ap.add_argument("--camera", default=None, help="camera index; default: try 0, 1, 2, 3 and take the first that works")
     ap.add_argument("--source", default=None, help="video file instead of a camera (loops)")
     ap.add_argument("--server", default="ws://localhost:8080/vision", help="HIVE backend vision socket")
     ap.add_argument("--osc", default=None, help="host:port — also send /hive/cam/* straight there (standalone use)")
@@ -368,8 +437,14 @@ def main() -> None:
     ap.add_argument("--imgsz", type=int, default=640, help="model input size")
     ap.add_argument("--eps", type=float, default=0.12, help="cluster radius, fraction of frame width (the dashboard overrides)")
     ap.add_argument("--mirror", action=argparse.BooleanOptionalAction, default=True)
-    ap.add_argument("--device", default="mps", help="mps (Apple), cuda, or cpu")
+    ap.add_argument("--backend", default="mps", choices=["mps", "coreml", "cpu", "cuda"],
+                    help="mps = Apple GPU (fastest here), coreml = Neural Engine (leaves the GPU to the wall), cpu, cuda")
+    ap.add_argument("--list-cameras", action="store_true", help="print the cameras and exit")
     args = ap.parse_args()
+    if args.list_cameras:
+        for i, n in enumerate(list_cameras()):
+            print(f"{i}: {n}")
+        return
     try:
         asyncio.run(run(args))
     except KeyboardInterrupt:
