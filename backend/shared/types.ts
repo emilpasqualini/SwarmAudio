@@ -269,8 +269,9 @@ export interface Settings {
   /** Camera: bees are drawn toward crowds on the wall, with this strength. */
   camCoupling: boolean;
   camStrength: number;
-  /** Camera: the crowd's motion gives the animals a gentle shove along the flow — noticeable, not much. */
+  /** Camera: the crowd's motion gives the animals a shove along the flow; camPushStrength = how much of the flow they pick up (0.5 = a draught, 3 = a gale). */
   camPush: boolean;
+  camPushStrength: number;
   /** Camera: cluster radius, fraction of the frame width. */
   camEps: number;
   /** Camera: mirror x so the picture behaves like a mirror. */
@@ -319,6 +320,7 @@ export const DEFAULT_SETTINGS: Settings = {
   camCoupling: false,
   camStrength: 0.5,
   camPush: false,
+  camPushStrength: 0.5,
   camEps: 0.12,
   camMirror: true,
   camPreview: true,
@@ -341,6 +343,7 @@ export const SETTINGS_LIMITS = {
   queenAfter: { min: 1, max: 600 },
   camStrength: { min: 0, max: 1 },
   camEps: { min: 0.02, max: 0.5 },
+  camPushStrength: { min: 0, max: 5 },
   camIndex: { min: -1, max: 7 },
   camDetectFps: { min: 1, max: 30 },
 } as const;

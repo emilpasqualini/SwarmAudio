@@ -185,7 +185,7 @@ function frame(now: number): void {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown, running: state?.settings.running ?? false, round: state?.settings.round ?? 0, coupling: { on: state?.settings.camCoupling ?? false, strength: state?.settings.camStrength ?? 0 }, push: state?.settings.camPush ?? false, species: state?.settings.species ?? 'bees', queenHidden: state?.settings.queenHidden ?? false });
+  visual.draw({ ctx, width: window.innerWidth, height: window.innerHeight, dt, time: (now - started) / 1000, colour, queen: state?.settings.queenUid ?? '', crown, running: state?.settings.running ?? false, round: state?.settings.round ?? 0, coupling: { on: state?.settings.camCoupling ?? false, strength: state?.settings.camStrength ?? 0 }, push: { on: state?.settings.camPush ?? false, strength: state?.settings.camPushStrength ?? 0 }, species: state?.settings.species ?? 'bees', queenHidden: state?.settings.queenHidden ?? false });
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

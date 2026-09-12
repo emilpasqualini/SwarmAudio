@@ -67,7 +67,6 @@ const EDGE_STEER = 2.5;           // rad/s of turning back toward the room at th
 const EDGE = 0.03;                // hard margin — never crossed
 const SEPARATION = 0.05;          // world distance under which bees nudge each other apart — small, collisions are the point
 const CROWN_COOLDOWN = 2.5;       // seconds after a crowning before the crown can move again
-const PUSH = 0.5;                 // how much of the crowd's flow (frame widths/s) an animal picks up when pushed
 const FULL_SIZE_UP_TO = 6;        // bees keep their full size up to this many; then they shrink
 const TRAIL = 70;                 // frames of trail
 const QUEEN_SCALE = 1.7;
@@ -320,7 +319,7 @@ export class Bees implements Visual {
       ? SEPARATION * (fieldMode ? 1.5 - this.flowCoherence : 0.5 + this.spread * 1.5)
       : SEPARATION;
     const beatLocked = couple > 0 && fieldMode && this.beatStrength > 0.4 && this.beat > 0;
-    const shove = push && running && time - this.camSeen < SHADOW_TTL && this.flow.length > 0;
+    const shove = push.on && push.strength > 0 && running && time - this.camSeen < SHADOW_TTL && this.flow.length > 0;
     if (round !== this.round) {
       // Reset: everyone takes off again from a fresh spot.
       this.round = round;
@@ -423,8 +422,8 @@ export class Bees implements Visual {
         const ci = Math.min(CAM_GRID.w - 1, Math.floor(b.x / w * CAM_GRID.w)), cj = Math.min(CAM_GRID.h - 1, Math.floor(b.y * CAM_GRID.h));
         const cell = this.flow[cj * CAM_GRID.w + ci];
         if (cell && cell[2] > 0.05) {
-          b.x += cell[0] * w * PUSH * cell[2] * dt;
-          b.y += cell[1] * PUSH * cell[2] * dt;
+          b.x += cell[0] * w * push.strength * cell[2] * dt;
+          b.y += cell[1] * push.strength * cell[2] * dt;
         }
       }
 
