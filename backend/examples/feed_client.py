@@ -8,7 +8,7 @@ would rather process the swarm in Python than parse OSC.
 Messages (same quantities as the OSC protocol, docs/OSC.md):
     {"type": "join",   "slot": 1, "uid": "a1b2c3d4", "platform": "ios", "name": "Emil"}
     {"type": "sample", "slot": 1, "uid": "a1b2c3d4", "t": 1757674000000,
-                       "acc": [x, y, z], "rel": [x, y, z], "gyro": [x, y, z], "activity": 0.3, "idle": 0, "turn": 0}
+                       "acc": [x, y, z], "rel": [x, y, z], "gyro": [x, y, z], "activity": 0.3, "idle": 0, "turn": 0, "queen": false}
     {"type": "swarm",  "t": ..., "count": 3, "energy": 0.4, "motion": 120.0, "sync": 0.8}
     {"type": "leave",  "slot": 1, "uid": "a1b2c3d4"}
 

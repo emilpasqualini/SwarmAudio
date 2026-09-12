@@ -24,7 +24,7 @@ import type { DeviceInfo, GlobalFeatures, MixFeatures, Sample, SwarmFeatures, Vi
 export interface OscFlags { wide: boolean; perField: boolean; roster: boolean; swarm: boolean; global: boolean; cam: boolean; camPersons: boolean; mix: boolean }
 
 /** Arguments of `/hive/sample`. Order and meaning: SAMPLE_FIELDS in shared/osc-schema.ts. Append only. */
-export function sampleArgs(s: Sample, t: number): OscArg[] {
+export function sampleArgs(s: Sample, t: number, isQueen = false): OscArg[] {
   const [ax, ay, az] = s.acc;
   const [rx, ry, rz] = s.rel;
   const [gx, gy, gz] = s.gyro;
@@ -36,6 +36,7 @@ export function sampleArgs(s: Sample, t: number): OscArg[] {
     s.activity, s.idle,
     Math.hypot(ax, ay, az), Math.hypot(rx, ry, rz), Math.hypot(gx, gy, gz),
     s.turn,
+    { i: isQueen ? 1 : 0 },
   ];
 }
 
@@ -98,7 +99,8 @@ export class OscOut {
     const accMag = Math.hypot(ax, ay, az), relMag = Math.hypot(rx, ry, rz), gyroMag = Math.hypot(gx, gy, gz);
     const parts: Buffer[] = [];
 
-    if (this.flags.wide) parts.push(encodeMessage('/hive/sample', sampleArgs(s, this.clock(s.t))));
+    const isQueen = this.queenUid !== '' && s.uid === this.queenUid;
+    if (this.flags.wide) parts.push(encodeMessage('/hive/sample', sampleArgs(s, this.clock(s.t), isQueen)));
     if (this.flags.perField) {
       const base = `/hive/dev/${s.slot}`;
       for (const m of [
@@ -108,6 +110,7 @@ export class OscOut {
         this.small('dev/activity', `${base}/activity`, [s.activity]),
         this.small('dev/mag', `${base}/mag`, [accMag, relMag, gyroMag]),
         this.small('dev/turn', `${base}/turn`, [s.turn]),
+        this.small('dev/queen', `${base}/queen`, [{ i: isQueen ? 1 : 0 }]),
       ]) if (m) parts.push(m);
     }
     if (parts.length) this.send(encodeBundle(parts));

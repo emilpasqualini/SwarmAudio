@@ -20,6 +20,7 @@ import { startSimulation } from './simulate';
 import type { Global } from './global';
 import type { VisionIn } from './vision';
 import type { Mix } from './mix';
+import type { Feed } from './feed';
 
 export class SettingsController {
   private stopSimulation: (() => void) | null = null;
@@ -33,6 +34,7 @@ export class SettingsController {
     private readonly global: Global,
     private readonly vision: VisionIn,
     private readonly mix: Mix,
+    private readonly feed: Feed,
   ) {}
 
   get current(): Settings { return this.store.settings; }
@@ -104,6 +106,7 @@ export class SettingsController {
     this.osc.muted = new Set(s.oscMute);
     this.mix.setHz(s.swarmHz);
     this.mix.queenUid = s.queenUid;
+    this.feed.queenUid = s.queenUid;
     this.global.setHz(s.swarmHz);
     this.vision.configure({ eps: s.camEps, mirror: s.camMirror, preview: s.camPreview, camera: s.camIndex });
     this.registry.condition.idleAfter = s.zeroIdleAfter;

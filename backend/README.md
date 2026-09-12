@@ -86,12 +86,12 @@ The protocol is documented in **[docs/OSC.md](docs/OSC.md)** — generated from
 *OSC protocol* card shows, so the three cannot disagree. In one breath:
 
 ```
-/hive/sample   i slot · s uid · f t · acc xyz · rel xyz · gyro xyz · activity · idle · |acc| |rel| |gyro|   ~60 Hz per phone
+/hive/sample   i slot · s uid · f t · acc xyz · rel xyz · gyro xyz · activity · idle · |acc| |rel| |gyro| · turn · i queen   ~60 Hz per phone
 /hive/swarm    f t · i count · f energy · f motion · f sync                                                  swarm rate (30 Hz)
 /hive/join     i slot · s uid · s name · s platform        /hive/leave  i slot · s uid
 /hive/roster   i count · (i slot · s uid · s name)…         /hive/schema i version                            every second
 /hive/queen    s uid · i slot                                when the crown moves, and every second ('' / 0 = none)
-/hive/dev/<slot>/acc|rel|gyro|activity|mag|turn             the same per-sample data, one small message each
+/hive/dev/<slot>/acc|rel|gyro|activity|mag|turn|queen       the same per-sample data, one small message each
 /hive/global   s "global" · f t · i count · coherence · phaseSync · tempo · centroid · entropy · dispersion · leanX · leanY · onsets · crest
 /hive/cam      f t · i count · i clusters · spread · energy · cx · cy · armsUp · flowX · flowY · turbulence · moveSync · converge · nearest · stillness · occupancy
 /hive/cam/cluster · /hive/cam/person · /hive/cam/status      groups, tracked people (anonymous), whether the camera runs
