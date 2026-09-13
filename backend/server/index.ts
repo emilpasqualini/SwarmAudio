@@ -118,6 +118,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (d) registry.remove(d.id);
       json(res, d ? 200 : 404, d ? {} : { error: 'no such slot' }); return true;
     }
+    // Re-zero from the dashboard row; the phone's own button goes to /ingest.
+    if (pathname === '/api/devices/reset' && req.method === 'POST') {
+      const { slot } = (await readJson(req)) as { slot?: number };
+      const ok = registry.resetZeroBySlot(Number(slot));
+      json(res, ok ? 200 : 404, ok ? {} : { error: 'no such slot' }); return true;
+    }
     if (pathname === '/api/targets' && req.method === 'GET') { json(res, 200, targets.all()); return true; }
     if (pathname === '/api/targets' && req.method === 'POST') {
       const body = (await readJson(req)) as { host?: string; port?: number | string; spec?: string; label?: string };

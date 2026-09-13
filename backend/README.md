@@ -59,7 +59,8 @@ big enough to scan from across a table.
 | hidden queen | game mode: no crown anywhere but this dashboard and OSC — the room has to find her by ear; the crown still passes on collision, silently |
 | osc global / osc mix | switch the meta-parameter families |
 | osc parameters | one chip per small message (dev/acc, swarm/energy, global/tempo, cam/person, mix/covered, …) — off = not sent; saves Wi-Fi traffic for whatever nobody patches. **morpho set** applies morpho_rack's send list in one click (mutes everything it does not route and switches /hive/sample off); **everything** turns it all back on |
-| ♛ / × in the device table | crown a device / drop it now |
+| ♛ / ⌖ / × in the device table | crown a device / re-zero its neutral position / drop it now |
+| column headings | click any heading in the device table (and in the protocol tables) to sort by it; click again to turn the order around. sorting by `\|rel\|` or `act` keeps whoever moves most on top |
 | test tones | sonify the swarm on this Mac |
 
 Only the ports come from the environment and need a restart:
@@ -77,6 +78,11 @@ Only the ports come from the environment and need a restart:
    and one of three lines: *no queen yet — move a lot!* (whoever moves most
    is crowned first), *collide with the queen to become queen*, or *you are
    the queen*. Languages: EN (default) · DE · 日本語.
+4. **reset sensors** makes whatever pose the phone is in right now the new
+   neutral — for a phone picked up in a different grip, or one that was lying
+   on a table while its owner was not. It clears that phone's baseline on the
+   server (`condition.ts`), so `rel` starts from zero again; the raw bars are
+   untouched. **−x −y −z** flip an axis for a phone that feels mirrored.
 
 The little map is fed on the link the phone already has — as the reply to a
 POSTed frame or a text message down the socket — ten times a second, and drawn

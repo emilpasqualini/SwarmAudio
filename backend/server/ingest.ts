@@ -93,6 +93,20 @@ export function createIngest(registry: Registry, wall: WallState, log: (line: st
       return true;
     }
 
+    // "reset sensors" on the phone: make the position it is in right now the
+    // new neutral. A request of its own rather than a flag in the frame — it
+    // happens once in a while, and this way the WebSocket phones and the POST
+    // phones use the identical path without touching the hot binary format.
+    if (query.get('reset') === '1') {
+      req.resume();
+      req.on('end', () => {
+        const ok = registry.resetZero(id);
+        if (ok) log(`#${id.slice(0, 8)} re-zeroed`);
+        res.writeHead(ok ? 204 : 404).end();
+      });
+      return true;
+    }
+
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (chunk: Buffer) => {

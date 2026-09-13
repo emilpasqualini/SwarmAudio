@@ -232,6 +232,24 @@ function streamingView(): HTMLElement {
   const leaveButton = el('button', { class: 'pill quiet', text: t('leave') });
   leaveButton.onclick = leave;
 
+  // Re-zero: the server holds the neutral pose (condition.ts), so the button
+  // asks it rather than touching anything here — the bars keep showing raw
+  // sensor values either way.
+  const reset = el('button', { class: 'pill small quiet', text: t('reset') });
+  reset.onclick = () => {
+    reset.disabled = true;
+    reset.textContent = t('resetting');
+    void (transport?.resetZero() ?? Promise.resolve(false)).then((ok) => {
+      reset.disabled = false;
+      reset.textContent = t('reset');
+      if (!ok) { log.warn('reset refused by the server'); return; }
+      log.step('neutral position reset');
+      reset.classList.add('on');
+      reset.classList.remove('quiet');
+      window.setTimeout(() => { reset.classList.remove('on'); reset.classList.add('quiet'); }, 700);
+    });
+  };
+
   const flips = el('div', { class: 'row wrap' },
     ...(['x', 'y', 'z'] as Axis[]).map((axis) => {
       const b = el('button', { class: `pill small ${invert[axis] ? 'on' : 'quiet'}`, text: `−${axis}` });
@@ -258,7 +276,10 @@ function streamingView(): HTMLElement {
       gyroAxes,
     ),
     statusLine,
-    el('div', { class: 'card' }, flips),
+    el('div', { class: 'card stack' },
+      el('div', { class: 'row wrap' }, reset, el('span', { class: 'note', text: t('resetHint') })),
+      flips,
+    ),
     el('div', { class: 'row', style: 'justify-content:center' }, leaveButton),
     el('p', { class: 'note center', text: t('keepOpen') }),
   );
