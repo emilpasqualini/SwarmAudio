@@ -26,7 +26,7 @@ python morpho_rack.py --chain voice --block 512
 python morpho_rack.py --list-models
 python morpho_rack.py --list-devices                    # indices for the next line
 python morpho_rack.py --in-device 18 --in-channel mix --out-device 15 --out-channel 1
-python morpho_rack.py --no-gui --preset live.json --routing live.json
+python morpho_rack.py --no-gui --preset live.json        # models, knobs, routing
 ```
 
 ## The window, control by control
@@ -51,8 +51,8 @@ group rather than breaking it apart.
 | **start** / **stop** | Opens or closes the audio stream. Loaded models are warmed up first, so starting takes a moment. |
 | **reset** | Clears the internal state of every model, effect and synth voice. Use it if a model gets stuck or starts to howl. While running it happens between two blocks. |
 | **feed the models:** mic · synth · both · file · test | What the models hear. **mic** is the audio input, **synth** the per-phone voices, **both** the two mixed, **file** a looped wav given with `--file` (there is no picker for it), **test** a slowly swept tone with a little noise. Switching needs no restart. |
-| **save preset** | Writes every parameter in the rack, and which model is in each slot, to a JSON file in `presets/`. The OSC routing is saved separately, on the osc tab. |
-| **load preset** | Loads such a file: the models, then every parameter. |
+| **save preset** | Writes the whole setup to a JSON file in `presets/`: which model is in each slot, every knob in the rack, the settings that are not knobs (chain link, solo buttons, the input file), and the OSC routing table with its port. |
+| **load preset** | Loads such a file and puts the window back the way it was: the models, then the knobs, then the switches and dropdowns, then the routing list. A preset written before a setting existed still loads; anything it does not mention is left alone. |
 | status line | `stopped`, or `running`, then what feeds the models, the block size in samples, the models' latency, **load** (how much of each block's time the audio work takes), **underruns** (blocks the sound card asked for before they were ready, heard as dropouts) and **clips** (blocks still over full scale after the master limiter, which only happens with it switched off). `mic (no input device)` means the mic is selected but no input could be opened. |
 
 | second row | what it does |
@@ -76,6 +76,20 @@ group rather than breaking it apart.
 The devices and channels are remembered in `presets/audio.json`, by name rather
 than by index, since indices move when anything is plugged in. They are used at
 the next start unless `--in-device` or `--out-device` is given.
+
+**What a preset holds.** One file is the whole setup: the model in each slot (by
+path, skipped if it is not on this machine), every knob on the parameter
+registry — slot levels, pans, dry/wet, model parameters, both conditioning
+chains, the synth and each voice, the queen settings, the camera sections, the
+master chain — the settings that are not knobs, which are the chain link, the
+solo buttons and the input file, and the OSC routing table with its port.
+
+Three things are deliberately outside it. The audio devices and channels, which
+are in `presets/audio.json` above, so a preset survives being carried to another
+machine. The block size, which restarts the stream. And whether the receiver is
+listening, which stays a decision you make with the **listen** button — loading
+a preset sets the port but does not open the socket, the same as loading a
+routing file, so a port change takes a **stop** and a **listen**.
 
 ### rack tab
 
@@ -207,7 +221,7 @@ an **enabled** tick and its faders:
 | `listening on …` | The port, packets received so far, how many different addresses have arrived, and decoding errors. `not listening` otherwise. |
 | **what to send** | Opens a window listing which OSC switches on the backend dashboard this routing needs on, which can go off, and roughly how many messages a second that saves. |
 | **load defaults** | Replaces the routing with the built-in one. Asks first if routes already exist, then lists what it installed. |
-| **load routing** / **save routing** | Load or save the routing table, and the port, as JSON in `presets/`. |
+| **load routing** / **save routing** | Load or save the routing table, and the port, as JSON in `presets/`. A whole preset already carries the routing; these are for moving a routing table between presets on its own. |
 
 **arriving**, left:
 
@@ -297,8 +311,11 @@ anything you export yourself with the SDK's `save_neutone_model`.
 **feed the models** on the top bar: **mic**, **synth**, **both**, **file**,
 **test**. They are gains rather than a switch, so `both` is a real blend, and
 `input.mic` and `input.synth` can be routed from OSC, so the swarm can crossfade
-between the room and itself. Switching needs no restart: the rack opens a duplex stream when it
-can and falls back to output-only when there is no input device.
+between the room and itself. Their range is −60 to +12 dB rather than the −40 of
+the other levels, because picking one source switches the rest fully off and
+−40 dB is not off, it is quiet. Switching needs no restart: the rack opens a
+duplex stream when it can and falls back to output-only when there is no input
+device.
 
 ### The synth
 

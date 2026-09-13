@@ -254,6 +254,11 @@ class ParamRef:
 # 0..1 knobs, which is what every model parameter is
 UNIT = dsp.Param("unit", "", 0.0, 1.0, 0.5, "")
 LEVEL = dsp.Param("level", "level", -40.0, 12.0, 0.0, "dB")
+# The input mixer needs a real zero. Picking a source switches the others fully
+# off, and -40 dB is not off, it is quiet: with the fader's floor at -40 a muted
+# source came back from a preset at 1% instead of silent, so every input bled a
+# little into the models. Same ceiling as the other levels.
+INPUT_LEVEL = dsp.Param("level", "level", -60.0, 12.0, 0.0, "dB")
 MIX = dsp.Param("mix", "dry/wet", 0.0, 1.0, 1.0, "")
 SWITCH = dsp.Param("switch", "on", 0.0, 1.0, 1.0, "")
 
@@ -1017,7 +1022,7 @@ class Rack:
                 f"input.{name}",
                 name,
                 "input",
-                LEVEL,
+                INPUT_LEVEL,
                 lambda k=name: gain_to_db(self.input_gain[k]),
                 lambda v, k=name: self.input_gain.__setitem__(k, db_to_gain(v)),
             )
@@ -1189,16 +1194,59 @@ class Rack:
 
     # -- presets ------------------------------------------------------------
 
-    def save_preset(self, path) -> None:
+    def state(self) -> dict:
+        """The settings that are not numbers on the registry.
+
+        Almost everything the window can set is a registry knob and travels in
+        `params`. These few are not: a checkbox, the solo buttons, and which
+        file the file input plays.
+        """
+        return {
+            "link_chains": self.link_chains,
+            "wav": str(self.wav) if self.wav else None,
+            "solo": [s.solo for s in self.slots],
+        }
+
+    def set_state(self, state: dict) -> None:
+        """Apply what `state()` returned. Unknown or missing keys are left
+        alone, so a preset written by an older version still loads."""
+        if "link_chains" in state:
+            self.link_chains = bool(state["link_chains"])
+        wav = state.get("wav")
+        if wav and Path(wav).exists():
+            # Read when the stream opens, so this lands on the next start.
+            self.wav = wav
+        elif wav:
+            log.warning("preset names an input file that is not here: %s", wav)
+        for slot, on in zip(self.slots, state.get("solo") or []):
+            slot.solo = bool(on)
+
+    def save_preset(self, path, osc=None) -> None:
+        """Everything the window can set, in one file.
+
+        Three sections beyond the models: `params` is every knob on the
+        registry, `state` the handful of settings that are not knobs, and `osc`
+        the routing table -- which belongs to the receiver rather than to the
+        engine, so the caller passes it in and the rack only carries it.
+
+        Audio devices are deliberately not in here. They live in
+        `presets/audio.json` and are found again by name, because a preset is
+        the piece and should survive being carried to another machine.
+        """
         reg = self.registry()
         data = {
             "models": [str(s.path) if s.path else None for s in self.slots],
             "params": {k: r.get() for k, r in reg.items()},
+            "state": self.state(),
         }
+        if osc:
+            data["osc"] = osc
         Path(path).write_text(json.dumps(data, indent=1), encoding="utf-8")
         log.info("wrote preset to %s", path)
 
-    def load_preset(self, path, load_models=True) -> None:
+    def load_preset(self, path, load_models=True) -> dict:
+        """Returns the file's `osc` section, empty when it has none, for the
+        caller to hand to its receiver."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if load_models:
             for i, p in enumerate(data.get("models") or []):
@@ -1217,7 +1265,9 @@ class Rack:
                     ref.set(float(v))
                 except Exception:
                     pass
+        self.set_state(data.get("state") or {})
         log.info("loaded preset from %s", path)
+        return data.get("osc") or {}
 
     # -- input sources ------------------------------------------------------
 
