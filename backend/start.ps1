@@ -58,12 +58,15 @@ function Get-CommandPath([string]$name) {
     return $command.Source
 }
 
-function Test-PortInUse([int]$port) {
-    try {
-        return $null -ne (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -First 1)
-    } catch {
-        return $false
-    }
+# Like start.sh: say who holds a port instead of dying with EADDRINUSE deep
+# in Node -- the holder is usually another HIVE from an earlier terminal.
+function Test-PortFree([int]$port) {
+    $holder = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $holder) { return $true }
+    $process = Get-Process -Id $holder.OwningProcess -ErrorAction SilentlyContinue
+    Write-Host "port $port is already in use by process $($holder.OwningProcess) ($($process.ProcessName))."
+    Write-Host "  another HIVE is probably running - stop it with:  Stop-Process -Id $($holder.OwningProcess)"
+    return $false
 }
 
 function Initialize-Vision {
@@ -107,7 +110,7 @@ if ($needsInstall) {
 $httpsPort = if ($env:HIVE_HTTPS_PORT) { [int]$env:HIVE_HTTPS_PORT } else { 8443 }
 $httpPort = if ($env:HIVE_HTTP_PORT) { [int]$env:HIVE_HTTP_PORT } else { 8080 }
 foreach ($port in @($httpsPort, $httpPort)) {
-    if (Test-PortInUse $port) { throw "Port $port is already in use. Stop the process using it or choose another port." }
+    if (-not (Test-PortFree $port)) { exit 1 }
 }
 
 if (-not $dev) {
