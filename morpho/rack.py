@@ -1667,3 +1667,78 @@ class Rack:
         self._mic_peak_acc = 0.0
         self._out_peak_acc = 0.0
         return mic, out
+
+
+# ---------------------------------------------------------------------------
+# finding a model's register
+# ---------------------------------------------------------------------------
+
+def probe_pitch(rack, index: int, span: int = 24, step: int = 3,
+                progress=None) -> dict:
+    """Which input register does this slot's model respond to most?
+
+    Morpho models are timbre transfer: each answers best in the register of
+    its training data, and an input a few octaves off comes back thin or as
+    noise. This measures that instead of guessing. A private copy of the
+    slot's model is loaded (the live one keeps playing and keeps its stream
+    state untouched), fed a short tone burst at every ``step`` semitones
+    within ±``span`` of the current input register, and the output level per
+    step is recorded after the model has settled.
+
+    The reference register is the geometric mean of the connected synth
+    voices' pitches — the register the room is actually singing in — or
+    middle C with nobody connected. Returns a dict with ``offsets``,
+    ``levels``, ``best`` (semitones to set the pre-chain repitch to),
+    ``confidence`` (peak level over the median; near 1 means the model does
+    not care) and ``f_ref``/``f_best`` in Hz. Blocking for a few seconds:
+    call from a background thread, never the audio path.
+    """
+    slot = rack.slots[index]
+    if slot.model is None or slot.path is None:
+        raise RuntimeError("no model in this slot")
+    # The rack raises the whole process to high priority; drop this thread
+    # below normal so probing never starves the models that are playing.
+    personal_mod.PersonalLayer._lower_own_priority()
+    path, block, sr, n_ch = slot.path, rack.block, rack.sr, rack.n_ch
+
+    voiced = [v.pitch for v in rack.synth.voices if v.connected and v.pitch > 0]
+    f_ref = float(np.exp(np.mean(np.log(voiced)))) if voiced else 261.6
+
+    sl = Slot(index, sr, block, n_ch)
+    sl.load(path, device=rack.device)
+    try:
+        offsets = [o for o in range(-span, span + 1, step)
+                   if 30.0 <= f_ref * 2.0 ** (o / 12.0) <= sr * 0.45]
+        settle = max(3, int(np.ceil(sl.latency / block)) + 2)
+        measure = 6
+        levels = []
+        for k, off in enumerate(offsets):
+            if progress is not None:
+                progress(k + 1, len(offsets))
+            f = f_ref * 2.0 ** (off / 12.0)
+            w = 2.0 * np.pi * f / sr
+            pos, acc, cnt = 0, 0.0, 0
+            for b in range(settle + measure):
+                j = np.arange(pos, pos + block, dtype=np.float64)
+                pos += block
+                # A few harmonics so models trained on voices or instruments
+                # have more than a bare sine to recognise.
+                mono = (0.3 * np.sin(w * j) + 0.12 * np.sin(2 * w * j)
+                        + 0.06 * np.sin(3 * w * j)).astype(np.float32)
+                x = np.repeat(mono[None, :], n_ch, axis=0)
+                y = sl.model.forward(x, sl.param_smoothed)
+                if b >= settle:
+                    acc += float(np.mean(y.astype(np.float64) ** 2))
+                    cnt += 1
+            levels.append(float(np.sqrt(acc / max(cnt, 1))))
+        peak = max(levels) if levels else 0.0
+        med = float(np.median(levels)) if levels else 0.0
+        best = offsets[int(np.argmax(levels))] if levels else 0
+        confidence = peak / med if med > 1e-6 else 1.0
+        log.info("slot %d register probe: best %+d st (%.0f Hz), peak/median %.2f",
+                 index + 1, best, f_ref * 2.0 ** (best / 12.0), confidence)
+        return {"offsets": offsets, "levels": levels, "best": float(best),
+                "confidence": float(confidence), "f_ref": f_ref,
+                "f_best": f_ref * 2.0 ** (best / 12.0)}
+    finally:
+        sl.unload()

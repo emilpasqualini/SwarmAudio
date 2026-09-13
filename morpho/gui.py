@@ -40,7 +40,7 @@ import devices as devices_mod
 import dsp
 import oscmap
 import synth as synth_mod
-from rack import N_SLOTS, SOURCES, gain_to_db
+from rack import N_SLOTS, SOURCES, gain_to_db, probe_pitch
 import personal as personal_mod
 import zones as zones_mod
 
@@ -893,7 +893,22 @@ class App:
             side="right", padx=3)
 
         rows = [ParamRow(frame, self.reg[f"slot{n}.level"], width=110, label_width=16),
-                ParamRow(frame, self.reg[f"slot{n}.mix"], width=110, label_width=16)]
+                ParamRow(frame, self.reg[f"slot{n}.mix"], width=110, label_width=16),
+                # The input repitch, surfaced from the pre-chain: moving the
+                # source into a model's register is the knob that decides
+                # whether a model answers at all, so it lives here too.
+                ParamRow(frame, self.reg[f"slot{n}.pre.pitch.semitones"],
+                         width=110, label_width=16)]
+        pitch_row = ttk.Frame(frame)
+        pitch_row.pack(fill="x", pady=(1, 0))
+        repitch = SwitchRow(pitch_row, self.reg[f"slot{n}.pre.pitch.on"], "repitch")
+        repitch.widget.pack(side="left")
+        auto_btn = ttk.Button(pitch_row, text="auto", width=5,
+                              command=lambda k=i: self._auto_pitch(k))
+        auto_btn.pack(side="left", padx=4)
+        auto_status = tk.StringVar(value="")
+        ttk.Label(pitch_row, textvariable=auto_status,
+                  foreground="#666").pack(side="left")
         ttk.Separator(frame).pack(fill="x", pady=6)
         params_frame = ttk.Frame(frame)
         params_frame.pack(fill="x")
@@ -902,15 +917,66 @@ class App:
         meter.pack(fill="x", side="bottom", pady=(6, 0))
 
         ui = {"name": name, "info": info, "picker": picker, "meter": meter,
-              "params_frame": params_frame, "rows": rows, "switches": [on],
+              "params_frame": params_frame, "rows": rows,
+              "switches": [on, repitch],
               "param_rows": [], "source": source, "section": section,
-              "section_text": section_text}
+              "section_text": section_text,
+              "auto_btn": auto_btn, "auto_status": auto_status,
+              "probing": False}
         self._refill_picker(ui, i)
         self._rebuild_slot_params(ui, i)
         return ui
 
     def _change_source(self, i):
         self.rack.set_slot_source(i, self.slot_ui[i]["source"].get())
+
+    def _auto_pitch(self, i):
+        """Probe which register slot i's model answers in, set its repitch."""
+        slot = self.rack.slots[i]
+        if slot.model is None or slot.path is None:
+            messagebox.showinfo("auto pitch", "Load a model into this slot first.")
+            return
+        ui = self.slot_ui[i]
+        if ui["probing"]:
+            return
+        ui["probing"] = True
+        ui["auto_btn"].config(state="disabled")
+        ui["auto_status"].set("probing...")
+
+        def work():
+            try:
+                res = probe_pitch(
+                    self.rack, i,
+                    progress=lambda k, total: self._post(
+                        ui["auto_status"].set, f"probing {k}/{total}"))
+            except Exception as exc:
+                self._post(lambda e=exc: messagebox.showerror("auto pitch", str(e)))
+                res = None
+            self._post(self._auto_done, i, res)
+
+        threading.Thread(target=work, daemon=True, name=f"autopitch-{i + 1}").start()
+
+    def _auto_done(self, i, res):
+        ui = self.slot_ui[i]
+        ui["probing"] = False
+        ui["auto_btn"].config(state="normal")
+        if res is None:
+            ui["auto_status"].set("failed")
+            return
+        if res["confidence"] < 1.3:
+            # The model answers everything about equally; moving the input
+            # would change nothing, so nothing is changed.
+            ui["auto_status"].set("flat response, left as is")
+            return
+        # Written straight at this slot's effect: the result belongs to this
+        # model, so it deliberately ignores "link all slots".
+        for eff in self.rack.slots[i].pre.effects:
+            if eff.name == "pitch":
+                eff.set("semitones", res["best"])
+                eff.enabled = True
+        ui["auto_status"].set(
+            f"{res['best']:+.0f} st → {res['f_best']:.0f} Hz "
+            f"({res['confidence']:.1f}×)")
 
     ROUTING_HELP = {'shared': 'every slot hears the input mixer (mic, synth, file, test)', 'split': "the queen's voice into slots 1 and 3, everyone else's into 2 and 4, levels matched -- let the room find her by timbre", 'personal': "every phone gets its own private copy of a model, fed only by that person's voice; the four slots become templates"}
 
@@ -1362,8 +1428,12 @@ class App:
     # source pickers ........................................................
 
     def _source_catalogue(self):
-        """group -> [(address, arg, in_lo, in_hi, why)], known plus seen."""
-        cat = {"swarm": list(oscmap.SWARM_SOURCES)}
+        """group -> [(address, arg, in_lo, in_hi, why)], known plus seen.
+
+        Every documented family is listed up front with its real ranges, so a
+        routing can be built before the backend has sent a single packet;
+        addresses seen on the wire are merged in on top."""
+        cat = {kind: list(rows) for kind, rows in oscmap.FAMILIES.items()}
         for i in range(1, self.rack.synth.n_voices + 1):
             cat[f"client {i}"] = oscmap.client_sources(i)
         for address in self.osc.seen:
