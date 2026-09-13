@@ -78,7 +78,26 @@ class Library:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.index_path = self.cache_dir / "index.json"
         self.entries: list[Entry] = []
+        self._sweep_partials()
         self.load()
+
+    def _sweep_partials(self, older_than_s: float = 3600.0) -> None:
+        """Remove downloads that were cut off when the app was closed.
+
+        A finished download is renamed into place; a killed one leaves its
+        `.part` file behind. Only files an hour old are removed, so a download
+        still running in another copy of the rack is never touched.
+        """
+        import time as _time
+
+        cutoff = _time.time() - older_than_s
+        for part in self.cache_dir.glob("*.part"):
+            try:
+                if part.stat().st_mtime < cutoff:
+                    part.unlink()
+                    log.info("removed an interrupted download: %s", part.name)
+            except OSError:
+                pass
 
     # -- index --------------------------------------------------------------
 

@@ -108,13 +108,38 @@ class Mapping:
     """One row of the routing table."""
 
     __slots__ = (
-        "address", "arg", "target", "in_lo", "in_hi", "out_lo", "out_hi",
-        "enabled", "invert", "slew", "seen_lo", "seen_hi", "last_in",
-        "last_out", "hits", "_value", "_last_time",
+        "address",
+        "arg",
+        "target",
+        "in_lo",
+        "in_hi",
+        "out_lo",
+        "out_hi",
+        "enabled",
+        "invert",
+        "slew",
+        "seen_lo",
+        "seen_hi",
+        "last_in",
+        "last_out",
+        "hits",
+        "_value",
+        "_last_time",
     )
 
-    def __init__(self, address="", arg=0, target="", in_lo=0.0, in_hi=1.0,
-                 out_lo=0.0, out_hi=1.0, enabled=True, invert=False, slew=0.0):
+    def __init__(
+        self,
+        address="",
+        arg=0,
+        target="",
+        in_lo=0.0,
+        in_hi=1.0,
+        out_lo=0.0,
+        out_hi=1.0,
+        enabled=True,
+        invert=False,
+        slew=0.0,
+    ):
         self.address = address
         self.arg = int(arg)
         self.target = target
@@ -172,10 +197,16 @@ class Mapping:
 
     def to_dict(self) -> dict:
         return {
-            "address": self.address, "arg": self.arg, "target": self.target,
-            "in_lo": self.in_lo, "in_hi": self.in_hi,
-            "out_lo": self.out_lo, "out_hi": self.out_hi,
-            "enabled": self.enabled, "invert": self.invert, "slew": self.slew,
+            "address": self.address,
+            "arg": self.arg,
+            "target": self.target,
+            "in_lo": self.in_lo,
+            "in_hi": self.in_hi,
+            "out_lo": self.out_lo,
+            "out_hi": self.out_hi,
+            "enabled": self.enabled,
+            "invert": self.invert,
+            "slew": self.slew,
         }
 
 
@@ -188,7 +219,11 @@ class Receiver:
 
     def __init__(self, apply: Callable[[str, float], None]) -> None:
         self._apply = apply
-        self.mappings: list[Mapping] = []
+        self._mappings: list[Mapping] = []
+        # address -> rows, so a message costs one dict lookup however long the
+        # table grows. A phone room sends thousands of messages a second and
+        # most of them are routed nowhere.
+        self._index: dict = {}
         self.port = 9001
         self.running = False
         self.packets = 0
@@ -201,7 +236,11 @@ class Receiver:
         # Events that are not numbers and so cannot be routed through the
         # table: who the queen is, and who just left.
         self.on_queen: Optional[Callable[[str, int], None]] = None
-        self.on_leave: Optional[Callable[[int], None]] = None
+        self.on_leave: Optional[Callable[[int, str], None]] = None
+        self.on_join: Optional[Callable[[int, str, str, str], None]] = None
+        self.on_roster: Optional[Callable[[list], None]] = None
+        self.on_cam_person: Optional[Callable[[list], None]] = None
+        self.on_cam_cluster: Optional[Callable[[list], None]] = None
         self.queen_uid = ""
         self.queen_slot = 0
 
@@ -209,6 +248,22 @@ class Receiver:
         self._thread = None
         self._stop = threading.Event()
         self._lock = threading.RLock()
+
+    @property
+    def mappings(self) -> list:
+        return self._mappings
+
+    @mappings.setter
+    def mappings(self, rows) -> None:
+        with self._lock:
+            self._mappings = list(rows)
+            self._reindex()
+
+    def _reindex(self) -> None:
+        index = {}
+        for m in self._mappings:
+            index.setdefault(m.address, []).append(m)
+        self._index = index
 
     # -- lifecycle ----------------------------------------------------------
 
@@ -266,39 +321,27 @@ class Receiver:
         numeric = [a for a in args if isinstance(a, (int, float))]
         self.seen[address] = (len(args), numeric[:8], time.monotonic())
 
-        # /hive/queen is "s uid, i slot" and /hive/leave is "i slot, s uid", so
-        # neither is a value to scale onto a knob; they say who someone is.
-        if address == "/hive/queen":
-            uid = args[0] if args and isinstance(args[0], str) else ""
-            slot = int(args[1]) if len(args) > 1 and isinstance(
-                args[1], (int, float)) else 0
-            if (uid, slot) != (self.queen_uid, self.queen_slot):
-                self.queen_uid, self.queen_slot = uid, slot
-                if self.on_queen is not None:
-                    try:
-                        self.on_queen(uid, slot)
-                    except Exception as exc:
-                        log.warning("osc: queen handler failed: %s", exc)
-        elif address == "/hive/leave" or address.endswith("/leave"):
-            slot = next((int(a) for a in args if isinstance(a, (int, float))), 0)
-            if slot and self.on_leave is not None:
-                try:
-                    self.on_leave(slot)
-                except Exception as exc:
-                    log.warning("osc: leave handler failed: %s", exc)
+        # Identities and per-subject messages are not values to scale onto a
+        # knob, so they go to handlers rather than through the table.
+        if address.startswith("/hive/") and address in _EVENT_ADDRESSES:
+            self._event(address, args)
+        elif address.startswith("/hive/dev/") and address.endswith(("/join", "/leave")):
+            self._event(address, args)
 
         if self.learn_target is not None and numeric:
             # Learn binds the first numeric argument of the next address that
             # carries one, which is what you get by wiggling the thing you want.
-            self.learned = (address, next(
-                i for i, a in enumerate(args) if isinstance(a, (int, float))
-            ))
+            self.learned = (
+                address,
+                next(i for i, a in enumerate(args) if isinstance(a, (int, float))),
+            )
             self.learn_target = None
 
-        with self._lock:
-            rows = [m for m in self.mappings if m.enabled and m.address == address]
+        rows = self._index.get(address)
+        if not rows:
+            return
         for m in rows:
-            if m.arg >= len(args):
+            if not m.enabled or m.arg >= len(args):
                 continue
             raw = args[m.arg]
             if not isinstance(raw, (int, float)):
@@ -310,16 +353,64 @@ class Receiver:
                 if self.errors < 5:
                     log.warning("osc: cannot apply %s: %s", m.target, exc)
 
+    def _call(self, fn, *a) -> None:
+        if fn is None:
+            return
+        try:
+            fn(*a)
+        except Exception as exc:
+            self.errors += 1
+            if self.errors < 5:
+                log.warning("osc: event handler failed: %s", exc)
+
+    def _event(self, address: str, args: list) -> None:
+        def s_(i):
+            return args[i] if len(args) > i and isinstance(args[i], str) else ""
+
+        def i_(i):
+            return (
+                int(args[i])
+                if len(args) > i and isinstance(args[i], (int, float))
+                else 0
+            )
+
+        if address == "/hive/queen":  # s uid, i slot
+            uid, slot = s_(0), i_(1)
+            if (uid, slot) != (self.queen_uid, self.queen_slot):
+                self.queen_uid, self.queen_slot = uid, slot
+                self._call(self.on_queen, uid, slot)
+        elif address == "/hive/join":  # i slot, s uid, s name, s platform
+            self._call(self.on_join, i_(0), s_(1), s_(2), s_(3))
+        elif address == "/hive/leave":  # i slot, s uid
+            self._call(self.on_leave, i_(0), s_(1))
+        elif address == "/hive/roster":  # i count, (i slot, s uid, s name)...
+            entries, k = [], 1
+            while k + 1 < len(args):
+                if isinstance(args[k], (int, float)):
+                    entries.append((int(args[k]), s_(k + 1), s_(k + 2)))
+                k += 3
+            self._call(self.on_roster, entries)
+        elif address == "/hive/cam/person":
+            self._call(self.on_cam_person, args)
+        elif address == "/hive/cam/cluster":
+            self._call(self.on_cam_cluster, args)
+        elif address.endswith("/join"):  # /hive/dev/N/join: s platform, i slot
+            self._call(self.on_join, i_(1), "", "", s_(0))
+        elif address.endswith("/leave"):  # /hive/dev/N/leave: i slot
+            self._call(self.on_leave, i_(0), "")
+
     # -- table --------------------------------------------------------------
 
     def add(self, mapping: Mapping) -> None:
         with self._lock:
-            self.mappings.append(mapping)
+            self._mappings.append(mapping)
+            self._reindex()
 
     def remove(self, mapping: Mapping) -> None:
         with self._lock:
-            if mapping in self.mappings:
-                self.mappings.remove(mapping)
+            if mapping in self._mappings:
+                self._mappings.remove(mapping)
+                self._reindex()
 
     def save(self, path: Path) -> None:
         with self._lock:
@@ -333,11 +424,22 @@ class Receiver:
     def load(self, path: Path) -> int:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         rows = [Mapping(**r) for r in data.get("mappings", [])]
-        with self._lock:
-            self.mappings = rows
+        self.mappings = rows
         self.port = int(data.get("port", self.port))
         log.info("osc: loaded %d mappings from %s", len(rows), path)
         return len(rows)
+
+
+_EVENT_ADDRESSES = frozenset(
+    (
+        "/hive/queen",
+        "/hive/join",
+        "/hive/leave",
+        "/hive/roster",
+        "/hive/cam/person",
+        "/hive/cam/cluster",
+    )
+)
 
 
 # ---------------------------------------------------------------------------
@@ -369,15 +471,22 @@ _DEV_PREFIX = "/hive/dev/"
 def classify(address: str):
     """Return (kind, client number or None) for an OSC address."""
     if address.startswith(_DEV_PREFIX):
-        rest = address[len(_DEV_PREFIX):]
+        rest = address[len(_DEV_PREFIX) :]
         num, _, tail = rest.partition("/")
         if num.isdigit():
             if tail in ("join", "leave"):
                 return EVENT, int(num)
             return CLIENT, int(num)
         return OTHER, None
-    if address in ("/hive/join", "/hive/leave", "/hive/roster", "/hive/queen",
-                   "/hive/schema", "/hive/ping", "/hive/cam/status"):
+    if address in (
+        "/hive/join",
+        "/hive/leave",
+        "/hive/roster",
+        "/hive/queen",
+        "/hive/schema",
+        "/hive/ping",
+        "/hive/cam/status",
+    ):
         return EVENT, None
     if address.startswith("/hive/global"):
         return GLOBAL, None
@@ -463,21 +572,21 @@ MIX_FIELDS = [
 
 def _family(prefix, fields, wide):
     """Both spellings of a v3 family: the per-field twin and the wide message."""
-    rows = [(f"{prefix}/{name}", 0, lo, hi, why)
-            for name, _, lo, hi, why in fields]
-    rows += [(wide, idx, lo, hi, f"{name}, from the wide message")
-             for name, idx, lo, hi, _ in fields]
+    rows = [(f"{prefix}/{name}", 0, lo, hi, why) for name, _, lo, hi, why in fields]
+    rows += [
+        (wide, idx, lo, hi, f"{name}, from the wide message")
+        for name, idx, lo, hi, _ in fields
+    ]
     return rows
 
 
 GLOBAL_SOURCES = _family("/hive/global", GLOBAL_FIELDS, "/hive/global")
-CAM_SOURCES = (
-    _family("/hive/cam", CAM_FIELDS, "/hive/cam")
-    + [("/hive/cam/centroid", 0, 0.0, 1.0, "where everyone is, left-right"),
-       ("/hive/cam/centroid", 1, 0.0, 1.0, "where everyone is, top-bottom"),
-       ("/hive/cam/flow", 0, -1.0, 1.0, "crowd drift, left-right per second"),
-       ("/hive/cam/flow", 1, -1.0, 1.0, "crowd drift, top-bottom per second")]
-)
+CAM_SOURCES = _family("/hive/cam", CAM_FIELDS, "/hive/cam") + [
+    ("/hive/cam/centroid", 0, 0.0, 1.0, "where everyone is, left-right"),
+    ("/hive/cam/centroid", 1, 0.0, 1.0, "where everyone is, top-bottom"),
+    ("/hive/cam/flow", 0, -1.0, 1.0, "crowd drift, left-right per second"),
+    ("/hive/cam/flow", 1, -1.0, 1.0, "crowd drift, top-bottom per second"),
+]
 MIX_SOURCES = _family("/hive/mix", MIX_FIELDS, "/hive/mix")
 
 # Per client. `n` is substituted for the client number.
@@ -501,8 +610,7 @@ FAMILIES = {
 
 
 def client_sources(n: int):
-    return [(a.format(n=n), arg, lo, hi, why)
-            for a, arg, lo, hi, why in CLIENT_SOURCES]
+    return [(a.format(n=n), arg, lo, hi, why) for a, arg, lo, hi, why in CLIENT_SOURCES]
 
 
 # ---------------------------------------------------------------------------
@@ -510,106 +618,163 @@ def client_sources(n: int):
 # ---------------------------------------------------------------------------
 
 
-def default_mappings(n_voices: int = 8, n_slots: int = 4,
-                     camera: bool = True) -> list:
-    """A routing table that already makes musical sense.
+def default_mappings(n_voices: int = 16, n_slots: int = 4, camera: bool = True) -> list:
+    """A routing table that already makes musical sense, with all slots equal.
 
-    Per client, onto that client's voice -- the three things a person can feel
-    themselves doing: moving makes you audible, turning on the spot is your
-    note, and how far you are from rest is how harsh you sound.
+    Per client, onto that client's voice: moving makes you audible, turning on
+    the spot is your note, and how far you are from rest is how harsh you
+    sound.
 
-    For the crowd, protocol v3 separates *how much* from *how*, so the two go to
-    different places. `/hive/swarm` is amount and drives loudness and
-    brightness. `/hive/global` is character and drives the things that change
-    what the piece is: coherence dries the room, entropy decides whether this is
-    a chorus or a soloist, tempo and crest shape the conditioning.
+    For the crowd, nothing here touches a single slot. Every route that shapes a
+    model shapes all four the same way, and no route sets a slot's level at
+    all -- the camera sections do that (see zones.py), so which model is loud
+    is decided by where people stand, not by a phone statistic.
 
-    Synchrony is the signal the piece is built around -- section 7's claim is
-    that synchrony becomes timbral unison -- so it gets several reinforcing
-    gestures. Scattered, you hear one voice in a large wash. As the crowd locks
-    together the room dries out and the other models rise in behind the first,
-    which stays up so there is never silence.
-
-    Camera routes are included by default but cost nothing when no camera is
-    attached, because nothing arrives on those addresses.
+    `/hive/swarm` is amount and drives brightness; `/hive/global` is character
+    and drives the room and the conditioning.
     """
     rows = []
 
     for i in range(1, n_voices + 1):
-        rows.append(Mapping(
-            address=f"/hive/dev/{i}/activity", arg=0,
-            target=f"synth.voice{i}.level",
-            in_lo=0.0, in_hi=1.0, out_lo=0.0, out_hi=1.0, slew=0.25))
-        rows.append(Mapping(
-            address=f"/hive/dev/{i}/turn", arg=0,
-            target=f"synth.voice{i}.pitch",
-            in_lo=-150.0, in_hi=150.0, out_lo=110.0, out_hi=880.0))
-        rows.append(Mapping(
-            address=f"/hive/dev/{i}/mag", arg=1,
-            target=f"synth.voice{i}.rough",
-            in_lo=0.5, in_hi=6.0, out_lo=0.0, out_hi=0.8, slew=0.4))
+        rows.append(
+            Mapping(
+                address=f"/hive/dev/{i}/activity",
+                arg=0,
+                target=f"synth.voice{i}.level",
+                in_lo=0.0,
+                in_hi=1.0,
+                out_lo=0.0,
+                out_hi=1.0,
+                slew=0.25,
+            )
+        )
+        rows.append(
+            Mapping(
+                address=f"/hive/dev/{i}/turn",
+                arg=0,
+                target=f"synth.voice{i}.pitch",
+                in_lo=-150.0,
+                in_hi=150.0,
+                out_lo=110.0,
+                out_hi=880.0,
+            )
+        )
+        rows.append(
+            Mapping(
+                address=f"/hive/dev/{i}/mag",
+                arg=1,
+                target=f"synth.voice{i}.rough",
+                in_lo=0.5,
+                in_hi=6.0,
+                out_lo=0.0,
+                out_hi=0.8,
+                slew=0.4,
+            )
+        )
 
-    # --- how together the crowd is -----------------------------------------
-    # coherence is the better signal than swarm/sync: it is a real correlation
-    # of movement rather than of how hard people are turning.
-    rows.append(Mapping(
-        address="/hive/global/coherence", arg=0, target="master.reverb.mix",
-        in_lo=0.0, in_hi=0.8, out_lo=0.55, out_hi=0.05, slew=3.0))
-    for slot in range(2, n_slots + 1):
-        rows.append(Mapping(
-            address="/hive/global/phaseSync", arg=0, target=f"slot{slot}.level",
-            in_lo=0.2, in_hi=0.9, out_lo=-40.0, out_hi=-3.0, slew=4.0))
+    # together -> dry and close; scattered -> large and diffuse
+    rows.append(
+        Mapping(
+            address="/hive/global/coherence",
+            arg=0,
+            target="master.reverb.mix",
+            in_lo=0.0,
+            in_hi=0.8,
+            out_lo=0.55,
+            out_hi=0.05,
+            slew=3.0,
+        )
+    )
+    # a soloist thins the bank, a chorus spreads it
+    rows.append(
+        Mapping(
+            address="/hive/global/entropy",
+            arg=0,
+            target="synth.spread",
+            in_lo=0.3,
+            in_hi=1.0,
+            out_lo=0.0,
+            out_hi=18.0,
+            slew=4.0,
+        )
+    )
+    rows.append(
+        Mapping(
+            address="/hive/swarm/count",
+            arg=0,
+            target="master.reverb.size",
+            in_lo=1.0,
+            in_hi=12.0,
+            out_lo=0.3,
+            out_hi=0.9,
+            slew=8.0,
+        )
+    )
 
-    # --- chorus or soloist --------------------------------------------------
-    # entropy 1 is everyone equally active, 0 is one person carrying the room.
-    # A soloist should be heard as a soloist, so the bank thins out.
-    rows.append(Mapping(
-        address="/hive/global/entropy", arg=0, target="synth.spread",
-        in_lo=0.3, in_hi=1.0, out_lo=0.0, out_hi=18.0, slew=4.0))
-
-    # --- how hard, how fast -------------------------------------------------
     for slot in range(1, n_slots + 1):
-        rows.append(Mapping(
-            address="/hive/swarm/energy", arg=0,
-            target=f"slot{slot}.pre.filter.lp",
-            in_lo=0.3, in_hi=8.0, out_lo=1200.0, out_hi=16000.0, slew=1.5))
-        rows.append(Mapping(
-            address="/hive/swarm/motion", arg=0, target=f"slot{slot}.model.p1",
-            in_lo=0.0, in_hi=180.0, out_lo=0.0, out_hi=0.7, slew=2.0))
+        # how hard the swarm moves opens the filter into every model
+        rows.append(
+            Mapping(
+                address="/hive/swarm/energy",
+                arg=0,
+                target=f"slot{slot}.pre.filter.lp",
+                in_lo=0.3,
+                in_hi=8.0,
+                out_lo=1200.0,
+                out_hi=16000.0,
+                slew=1.5,
+            )
+        )
+        # how much it turns stirs the first model parameter
+        rows.append(
+            Mapping(
+                address="/hive/swarm/motion",
+                arg=0,
+                target=f"slot{slot}.model.p1",
+                in_lo=0.0,
+                in_hi=180.0,
+                out_lo=0.0,
+                out_hi=0.7,
+                slew=2.0,
+            )
+        )
+        # the crowd's pulse sets how fast the conditioning breathes
+        rows.append(
+            Mapping(
+                address="/hive/global/tempo",
+                arg=0,
+                target=f"slot{slot}.pre.compressor.release",
+                in_lo=0.5,
+                in_hi=4.0,
+                out_lo=600.0,
+                out_hi=60.0,
+                slew=3.0,
+            )
+        )
+        # a spiky room gates harder
+        rows.append(
+            Mapping(
+                address="/hive/global/crest",
+                arg=0,
+                target=f"slot{slot}.post.gate.threshold",
+                in_lo=1.0,
+                in_hi=5.0,
+                out_lo=-60.0,
+                out_hi=-38.0,
+                slew=3.0,
+            )
+        )
 
-    # tempo is the crowd's pulse; let it set how fast the conditioning breathes
-    rows.append(Mapping(
-        address="/hive/global/tempo", arg=0, target="slot1.pre.compressor.release",
-        in_lo=0.5, in_hi=4.0, out_lo=600.0, out_hi=60.0, slew=3.0))
-    # crest: a spiky room gets a harder gate, a steady one a gentler
-    rows.append(Mapping(
-        address="/hive/global/crest", arg=0, target="slot1.post.gate.threshold",
-        in_lo=1.0, in_hi=5.0, out_lo=-60.0, out_hi=-38.0, slew=3.0))
-
-    rows.append(Mapping(
-        address="/hive/swarm/count", arg=0, target="master.reverb.size",
-        in_lo=1.0, in_hi=12.0, out_lo=0.3, out_hi=0.9, slew=8.0))
-
-    if camera:
-        # --- the room as the camera sees it ---------------------------------
-        # People coming together is the same gesture as phones synchronising,
-        # from the other subsystem, so it lands on the same kind of thing.
-        rows.append(Mapping(
-            address="/hive/cam/spread", arg=0, target="master.reverb.predelay",
-            in_lo=0.05, in_hi=0.6, out_lo=5.0, out_hi=60.0, slew=4.0))
-        rows.append(Mapping(
-            address="/hive/cam/armsUp", arg=0, target="master.level",
-            in_lo=0.0, in_hi=1.2, out_lo=-9.0, out_hi=-1.0, slew=2.0))
-        rows.append(Mapping(
-            address="/hive/cam/stillness", arg=0, target="synth.level",
-            in_lo=0.0, in_hi=1.0, out_lo=-6.0, out_hi=-20.0, slew=4.0))
-        rows.append(Mapping(
-            address="/hive/cam/occupancy", arg=0, target="slot1.mix",
-            in_lo=0.1, in_hi=0.9, out_lo=0.5, out_hi=1.0, slew=5.0))
-        # the two subsystems agreeing is worth hearing
-        rows.append(Mapping(
-            address="/hive/mix/covered", arg=0, target="slot1.post.reverb.mix",
-            in_lo=0.0, in_hi=0.8, out_lo=0.0, out_hi=0.35, slew=5.0))
+    # if camera:
+    #     rows.append(Mapping(
+    #         address="/hive/cam/spread", arg=0, target="master.reverb.predelay",
+    #         in_lo=0.05, in_hi=0.6, out_lo=5.0, out_hi=60.0, slew=4.0))
+    #     rows.append(Mapping(
+    #         address="/hive/cam/armsUp", arg=0, target="master.level",
+    #         in_lo=0.0, in_hi=1.2, out_lo=-9.0, out_hi=-1.0, slew=2.0))
+    #     rows.append(Mapping(
+    #         address="/hive/cam/stillness", arg=0, target="synth.level",
+    #         in_lo=0.0, in_hi=1.0, out_lo=-6.0, out_hi=-20.0, slew=4.0))
     return rows
 
 
@@ -618,16 +783,157 @@ DEFAULT_NOTES = [
     "client N turn        -> synth voice N pitch",
     "client N |rel|       -> synth voice N roughness",
     "global coherence     -> master reverb mix (together is dry)",
-    "global phaseSync     -> slots 2-4 level (in step is unison)",
     "global entropy       -> synth detune (a soloist thins the bank)",
-    "global tempo         -> slot 1 compressor release (the crowd's pulse)",
-    "global crest         -> slot 1 gate threshold (spiky rooms gate harder)",
-    "swarm energy         -> every slot's input high cut",
-    "swarm motion         -> every slot's first model parameter",
+    "global tempo         -> all slots' compressor release",
+    "global crest         -> all slots' gate threshold",
+    "swarm energy         -> all slots' input high cut",
+    "swarm motion         -> all slots' first model parameter",
     "swarm count          -> master reverb size",
     "cam spread           -> master reverb pre-delay",
     "cam armsUp           -> master level",
     "cam stillness        -> synth level (a still room quietens)",
-    "cam occupancy        -> slot 1 dry/wet",
-    "mix covered          -> slot 1 reverb (the two subsystems agreeing)",
+    "cam person / cluster -> slot N level, from camera section N",
 ]
+
+
+# ---------------------------------------------------------------------------
+# what the backend actually needs to send
+# ---------------------------------------------------------------------------
+
+# Every switchable per-field key on the dashboard, from backend/docs/OSC.md.
+DASHBOARD_KEYS = (
+    "dev/acc",
+    "dev/rel",
+    "dev/gyro",
+    "dev/activity",
+    "dev/mag",
+    "dev/turn",
+    "swarm/count",
+    "swarm/energy",
+    "swarm/motion",
+    "swarm/sync",
+    "global/coherence",
+    "global/phaseSync",
+    "global/tempo",
+    "global/centroid",
+    "global/entropy",
+    "global/dispersion",
+    "global/leanX",
+    "global/leanY",
+    "global/onsets",
+    "global/crest",
+    "cam/count",
+    "cam/clusters",
+    "cam/spread",
+    "cam/energy",
+    "cam/centroid",
+    "cam/armsUp",
+    "cam/flow",
+    "cam/turbulence",
+    "cam/moveSync",
+    "cam/converge",
+    "cam/nearest",
+    "cam/stillness",
+    "cam/occupancy",
+    "cam/cluster",
+    "cam/person",
+    "cam/status",
+    "mix/distance",
+    "mix/beesInCrowd",
+    "mix/queenInCrowd",
+    "mix/covered",
+    "mix/alignment",
+    "mix/balance",
+)
+
+WIDE_FAMILIES = (
+    "/hive/sample",
+    "/hive/swarm",
+    "/hive/global",
+    "/hive/cam",
+    "/hive/mix",
+)
+
+
+def _key_for(address: str):
+    """Dashboard switch that controls an address, or None for a wide message."""
+    if address.startswith("/hive/dev/"):
+        tail = address.rsplit("/", 1)[-1]
+        return f"dev/{tail}"
+    for prefix, fam in (
+        ("/hive/swarm/", "swarm"),
+        ("/hive/global/", "global"),
+        ("/hive/cam/", "cam"),
+        ("/hive/mix/", "mix"),
+    ):
+        if address.startswith(prefix):
+            return f"{fam}/{address[len(prefix):].split('/')[0]}"
+    return None
+
+
+def required_sends(mappings, zones: bool = True, zone_source: str = "person") -> dict:
+    """Which dashboard switches this rack needs on, and which can go off.
+
+    Built from the routing table actually loaded, plus the two things that do
+    not go through the table: camera sections need per-person (or per-cluster)
+    messages, and the queen, join, leave and roster events are housekeeping the
+    backend always sends.
+    """
+    need, wide = set(), set()
+    for m in mappings:
+        if not m.enabled:
+            continue
+        key = _key_for(m.address)
+        if key:
+            need.add(key)
+        elif m.address in WIDE_FAMILIES:
+            wide.add(m.address)
+    if zones:
+        need.add("cam/person" if zone_source == "person" else "cam/cluster")
+    off = [k for k in DASHBOARD_KEYS if k not in need]
+    return {
+        "on": sorted(need),
+        "off": off,
+        "wide_on": sorted(wide),
+        "wide_off": [w for w in WIDE_FAMILIES if w not in wide],
+        "always": [
+            "/hive/queen",
+            "/hive/join",
+            "/hive/leave",
+            "/hive/roster",
+            "/hive/schema",
+        ],
+    }
+
+
+def estimate_rate(
+    keys,
+    phones: int = 8,
+    people: int = 6,
+    clusters: int = 2,
+    swarm_hz: float = 30.0,
+    dev_hz: float = 60.0,
+    cam_fps: float = 15.0,
+    wide=(),
+) -> float:
+    """Rough messages per second for a set of dashboard keys."""
+    rate = 0.0
+    for k in keys:
+        fam = k.split("/")[0]
+        if fam == "dev":
+            rate += phones * dev_hz
+        elif fam in ("swarm", "global", "mix"):
+            rate += swarm_hz
+        elif k == "cam/person":
+            rate += people * cam_fps
+        elif k == "cam/cluster":
+            rate += clusters * cam_fps
+        elif fam == "cam":
+            rate += cam_fps
+    for w in wide:
+        rate += (
+            phones * dev_hz
+            if w == "/hive/sample"
+            else (cam_fps if w == "/hive/cam" else swarm_hz)
+        )
+    return rate

@@ -25,7 +25,10 @@ left alone until the mouse comes up, or the two fight.
 from __future__ import annotations
 
 import logging
+import queue
+import socket
 import threading
+import time
 import tkinter as tk
 from collections import deque
 from pathlib import Path
@@ -33,10 +36,13 @@ from tkinter import filedialog, messagebox, ttk
 
 import numpy as np
 
+import devices as devices_mod
 import dsp
 import oscmap
 import synth as synth_mod
-from rack import N_SLOTS, gain_to_db
+from rack import N_SLOTS, SOURCES, gain_to_db
+import personal as personal_mod
+import zones as zones_mod
 
 log = logging.getLogger("morpho_rack.gui")
 
@@ -72,7 +78,12 @@ class ParamRow:
         self._label()
 
     def _label(self):
-        self.text.set(f"{self.ref.label}  {self.ref.text()}")
+        # Setting a Tk variable redraws the widget even when nothing changed,
+        # and with forty rows at 10 Hz that is measurable; compare first.
+        text = f"{self.ref.label}  {self.ref.text()}"
+        if text != getattr(self, "_last_text", None):
+            self._last_text = text
+            self.text.set(text)
 
     def refresh(self):
         """Pull the value back in, for knobs OSC or a preset moved."""
@@ -149,6 +160,195 @@ class LoadGraph:
                 c.create_line(*pts, fill=colour, width=1)
 
 
+def local_addresses() -> list:
+    """This machine's IPv4 addresses, the one that routes to the LAN first.
+
+    Connecting a UDP socket sends nothing; it only asks the OS which interface
+    it would use, which is the address the backend's dashboard needs. The rest
+    come from the host name, minus loopback. CLAUDE.md warns the Mac's LAN IP
+    changes; this laptop's can too, so it is re-read every few seconds.
+    """
+    ips = []
+    for probe in ("10.255.255.255", "192.168.255.255"):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+                sk.connect((probe, 1))
+                ip = sk.getsockname()[0]
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+        except OSError:
+            pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except OSError:
+        pass
+    return ips or ["127.0.0.1"]
+
+
+class HiddenAddress:
+    """A label that shows this machine's OSC address only on request.
+
+    Hidden by default because the window may be on a projector or in a
+    screenshot. Hovering reveals it; clicking keeps it revealed until the next
+    click; double-clicking copies it to the clipboard.
+    """
+
+    MASK = "osc address \u25b8 hover or click"
+
+    def __init__(self, parent, root, port_fn, listening_fn) -> None:
+        self.root = root
+        self.port_fn = port_fn
+        self.listening_fn = listening_fn
+        self.pinned = False
+        self.hovering = False
+        self.ips = local_addresses()
+        self._read_at = time.monotonic()
+        self.var = tk.StringVar(value=self.MASK)
+        self.label = ttk.Label(parent, textvariable=self.var, foreground="#666",
+                               cursor="hand2")
+        self.label.bind("<Enter>", self._enter)
+        self.label.bind("<Leave>", self._leave)
+        self.label.bind("<Button-1>", self._click)
+        self.label.bind("<Double-Button-1>", self._copy)
+
+    def text(self) -> str:
+        port = self.port_fn()
+        where = "   ".join(f"{ip}:{port}" for ip in self.ips)
+        state = "" if self.listening_fn() else "   (not listening)"
+        return f"osc to {where}{state}"
+
+    def refresh(self) -> None:
+        if time.monotonic() - self._read_at > 5.0:
+            # Off the GUI thread: resolving the host name can stall for seconds
+            # on a network with broken DNS, and this runs ten times a second.
+            self._read_at = time.monotonic()
+            threading.Thread(target=self._reread, daemon=True).start()
+        want = self.text() if (self.pinned or self.hovering) else self.MASK
+        if self.var.get() != want:
+            self.var.set(want)
+
+    def _reread(self) -> None:
+        self.ips = local_addresses()
+
+    def _enter(self, _e=None):
+        self.hovering = True
+        self.refresh()
+
+    def _leave(self, _e=None):
+        self.hovering = False
+        self.refresh()
+
+    def _click(self, _e=None):
+        self.pinned = not self.pinned
+        self.refresh()
+
+    def _copy(self, _e=None):
+        self.pinned = True
+        self.root.clipboard_clear()
+        self.root.clipboard_append(f"{self.ips[0]}:{self.port_fn()}")
+        self.var.set(self.text() + "   copied")
+
+
+class LevelMeter:
+    """A peak meter in dB with a held peak and a clip light.
+
+    It falls at a fixed rate rather than jumping to each new reading, so a
+    transient stays on screen long enough to read. The peak line holds for a
+    moment, and the clip light stays lit until clicked: a clip lasting one
+    block is long over by the time anyone looks.
+    """
+
+    FLOOR = -60.0
+    FALL_DB_PER_S = 24.0
+    HOLD_S = 1.5
+    ZONES = ((-60.0, -12.0, "#5cb85c"), (-12.0, -3.0, "#e0b030"), (-3.0, 0.0, "#d9534f"))
+
+    def __init__(self, parent, width=120, height=12):
+        self.width, self.height = width, height
+        self.canvas = tk.Canvas(parent, width=width + height + 3, height=height,
+                                highlightthickness=0, bg="#f4f4f4", cursor="hand2")
+        c = self.canvas
+        c.create_rectangle(0, 0, width, height, fill="#2b2b2b", outline="")
+        for db in (-48, -36, -24, -12, -6):
+            x = self._x(db)
+            c.create_line(x, 0, x, height, fill="#4a4a4a")
+        self.bars = [c.create_rectangle(self._x(lo), 1, self._x(lo), height - 1,
+                                        fill=col, outline="")
+                     for lo, _hi, col in self.ZONES]
+        self.hold_line = c.create_line(0, 0, 0, height, fill="#e8e8e8", state="hidden")
+        self.lamp = c.create_rectangle(width + 3, 0, width + 3 + height, height,
+                                       fill="#555", outline="")
+        c.bind("<Button-1>", self.clear_clip)
+        self.level = self.FLOOR
+        self.hold = self.FLOOR
+        self.hold_until = 0.0
+        self.clipped = False
+        self._clips_seen = 0
+        self._t = time.monotonic()
+        self._drawn = None
+
+    def _x(self, db: float) -> float:
+        db = min(max(db, self.FLOOR), 0.0)
+        return self.width * (db - self.FLOOR) / -self.FLOOR
+
+    def push(self, peak, now=None) -> float:
+        """Feed the loudest sample since the last call; None means no new audio,
+        which lets the bar fall without pretending there was silence."""
+        now = time.monotonic() if now is None else now
+        dt = min(max(now - self._t, 0.0), 1.0)
+        self._t = now
+        fall = self.FALL_DB_PER_S * dt
+        db = self.FLOOR
+        if peak is not None and peak > 0.0:
+            db = max(self.FLOOR, gain_to_db(peak))
+        self.level = max(db if peak is not None else self.FLOOR, self.level - fall)
+        if peak is not None and db >= self.hold:
+            self.hold = db
+            self.hold_until = now + self.HOLD_S
+        elif now > self.hold_until:
+            self.hold = max(self.level, self.hold - 2.0 * fall)
+        self.draw()
+        return db
+
+    def idle(self) -> None:
+        """Nothing to show: drop straight to the floor."""
+        self.level = self.hold = self.FLOOR
+        self.draw()
+
+    def clips(self, count: int) -> None:
+        """Latch the light when the owner's clip counter has moved on."""
+        if count > self._clips_seen:
+            self.clipped = True
+        self._clips_seen = count
+
+    def clear_clip(self, _e=None) -> None:
+        self.clipped = False
+        self.draw()
+
+    def draw(self) -> None:
+        state = (round(self._x(self.level)), round(self._x(self.hold)), self.clipped)
+        if state == self._drawn:
+            return
+        self._drawn = state
+        c, h = self.canvas, self.height
+        for item, (lo, hi, _col) in zip(self.bars, self.ZONES):
+            right = min(self.level, hi)
+            c.coords(item, self._x(lo), 1, self._x(max(right, lo)), h - 1)
+        if self.hold > self.FLOOR + 0.5:
+            x = self._x(self.hold)
+            c.coords(self.hold_line, x, 0, x, h)
+            c.itemconfigure(self.hold_line, state="normal")
+        else:
+            c.itemconfigure(self.hold_line, state="hidden")
+        c.itemconfigure(self.lamp, fill="#e02020" if self.clipped else "#555")
+
+
+NO_INPUT = "(no input)"
+
+
 def meter_value(peak: float) -> float:
     """dB over the top 60 dB; a linear meter shows almost nothing."""
     return float(np.clip((gain_to_db(peak) + 60.0) / 60.0, 0.0, 1.0) * 100.0)
@@ -182,6 +382,11 @@ class App:
         self._pending_after = None
         self._picker_entries = {}
         self._tick = 0
+        # Work finished on background threads (loads, downloads) hands its
+        # window updates over here instead of touching Tk itself. Tkinter is
+        # not thread-safe: calling it from another thread works most of the
+        # time and then fails with "main thread is not in main loop".
+        self._ui_calls: queue.Queue = queue.Queue()
 
         self._build_transport()
         self.tabs = ttk.Notebook(self.root)
@@ -244,10 +449,283 @@ class App:
             side="left", padx=(0, 14))
         self._block_note()
 
+        self.device_note = tk.StringVar(value=f"networks on {self.rack.device}")
+        ttk.Label(row2, textvariable=self.device_note, foreground="#666").pack(
+            side="left", padx=(0, 14))
+
+        self.address = HiddenAddress(
+            row2, self.root,
+            port_fn=lambda: self._current_port(),
+            listening_fn=lambda: self.osc.running)
+        self.address.label.pack(side="left", padx=(0, 14))
+
         self.graph = LoadGraph(row2)
         self.graph.canvas.pack(side="right")
         ttk.Label(row2, textvariable=self.graph.text, foreground="#666").pack(
             side="right", padx=6)
+
+        self._build_audio_io()
+
+    # -- audio devices ------------------------------------------------------
+
+    def _build_audio_io(self):
+        row = ttk.Frame(self.root, padding=(8, 0, 8, 6))
+        row.pack(fill="x")
+        # Device names run long ("Microphone Array (2- Intel® Smart Sound
+        # Technology for Digital Microphones) · WASAPI · 4 ch") and the row has
+        # no room for them, so the list that drops down is wider than the box.
+        ttk.Style().configure("Device.TCombobox", postoffset=(0, 0, 390, 0))
+
+        ttk.Label(row, text="in").pack(side="left")
+        self.in_box = ttk.Combobox(row, state="readonly", width=30,
+                                   style="Device.TCombobox")
+        self.in_box.pack(side="left", padx=(3, 2))
+        self.in_box.bind("<<ComboboxSelected>>", self._pick_in_device)
+        self.in_ch = ttk.Combobox(row, state="readonly", width=5)
+        self.in_ch.pack(side="left", padx=(0, 6))
+        self.in_ch.bind("<<ComboboxSelected>>", self._pick_in_channel)
+        self.in_meter = LevelMeter(row)
+        self.in_meter.canvas.pack(side="left")
+        self.in_level = tk.StringVar(value="-")
+        ttk.Label(row, textvariable=self.in_level, width=15, foreground="#666").pack(
+            side="left", padx=(4, 10))
+
+        ttk.Label(row, text="out").pack(side="left")
+        self.out_box = ttk.Combobox(row, state="readonly", width=30,
+                                    style="Device.TCombobox")
+        self.out_box.pack(side="left", padx=(3, 2))
+        self.out_box.bind("<<ComboboxSelected>>", self._pick_out_device)
+        self.out_ch = ttk.Combobox(row, state="readonly", width=5)
+        self.out_ch.pack(side="left", padx=(0, 6))
+        self.out_ch.bind("<<ComboboxSelected>>", self._pick_out_channel)
+        self.out_meter = LevelMeter(row, width=90)
+        self.out_meter.canvas.pack(side="left")
+
+        ttk.Button(row, text="rescan", width=7, command=self._rescan_devices).pack(
+            side="left", padx=(10, 6))
+        self.io_note = tk.StringVar()
+        ttk.Label(row, textvariable=self.io_note, foreground="#666").pack(side="left")
+
+        self._in_zero_ticks = 0
+        self._in_blocks_seen = 0
+        self._fill_devices()
+
+    def _fill_devices(self):
+        """List what PortAudio can see, lowest-latency host API first."""
+        try:
+            inputs, outputs, d_in, d_out = devices_mod.scan(self.rack.sr)
+        except Exception as exc:
+            log.error("could not list audio devices: %s", exc)
+            inputs, outputs, d_in, d_out = [], [], None, None
+        self._default_in, self._default_out = d_in, d_out
+        self._in_devs = {d.index: d for d in inputs}
+        self._out_devs = {d.index: d for d in outputs}
+
+        # No separate "system default" entry: it is one of the devices listed,
+        # and showing it twice is what this list is meant to stop. A rack left
+        # on the default shows that device selected instead.
+        def choices(pool, kind, default):
+            out = {}
+            if kind == "in":
+                out[NO_INPUT] = "off"
+            for d in pool:
+                label = d.label(kind)
+                if label in out:           # two identical interfaces plugged in
+                    label = f"{label}  #{d.index}"
+                out[label] = d.index
+            return out
+
+        self._in_choices = choices(inputs, "in", d_in)
+        self._out_choices = choices(outputs, "out", d_out)
+        self.in_box["values"] = list(self._in_choices)
+        self.out_box["values"] = list(self._out_choices)
+        self._show_audio_choice()
+
+    def _resolve(self, dev, kind):
+        """A device as the rack holds it (None, an index, or a name from the
+        command line) as an index into the scanned list, or None."""
+        if dev is None or isinstance(dev, int):
+            return dev
+        try:
+            import sounddevice as sd
+
+            return int(sd.query_devices(dev, "input" if kind == "in" else "output")["index"])
+        except Exception:
+            return None
+
+    def _show_audio_choice(self):
+        """Make both rows say what the rack is actually using."""
+        r = self.rack
+
+        def label_for(choices, value, default, kind):
+            if value is None:
+                value = default
+            for label, v in choices.items():
+                if v == value and v != "off":
+                    return label
+            # a device given on the command line from a host API not listed
+            return "" if value is None else devices_mod.describe(value, kind)
+
+        in_idx = self._resolve(r.in_device, "in")
+        self.in_box.set(NO_INPUT if not r.duplex
+                        else label_for(self._in_choices, in_idx, self._default_in, "in"))
+        dev = self._in_devs.get(in_idx if in_idx is not None else self._default_in)
+        width = r.n_ch
+        values = devices_mod.channel_choices(dev.max_in if dev else width, width, "in")
+        self.in_ch["values"] = values
+        self.in_ch.set(devices_mod.channel_label(r.in_channel, width, "in"))
+        self.in_ch.config(state="readonly" if r.duplex else "disabled")
+
+        out_idx = self._resolve(r.out_device, "out")
+        self.out_box.set(label_for(self._out_choices, out_idx, self._default_out, "out"))
+        dev = self._out_devs.get(out_idx if out_idx is not None else self._default_out)
+        max_out = dev.max_out if dev else 2
+        values = devices_mod.channel_choices(max_out, 2, "out")
+        self.out_ch["values"] = values
+        self.out_ch.set("1" if max_out <= 1 else
+                        devices_mod.channel_label(r.out_channel, 2, "out"))
+
+    def _apply_audio(self, **changes):
+        """Hand a device change to the rack, which restarts the stream if it
+        runs and puts the old devices back if the new ones will not open."""
+        self.root.config(cursor="watch")
+        self.root.update_idletasks()
+        try:
+            self.rack.set_audio(**changes)
+        except Exception as exc:
+            first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+            messagebox.showerror(
+                "audio device",
+                f"that device would not open, so the previous one is still in use.\n\n"
+                f"{first}")
+        finally:
+            self.root.config(cursor="")
+        self.start_btn.config(text="stop" if self.rack.running else "start")
+        self.in_meter.idle()
+        self.out_meter.idle()
+        self._in_zero_ticks = 0
+        self._show_audio_choice()
+        devices_mod.save(self.preset_dir / "audio.json", self.rack)
+
+    def _pick_in_device(self, _e=None):
+        value = self._in_choices.get(self.in_box.get())
+        if value == "off":
+            self._apply_audio(input_enabled=False)
+            return
+        dev = self._in_devs.get(value if value is not None else self._default_in)
+        ch = self.rack.in_channel
+        if dev is not None:
+            if dev.max_in < self.rack.n_ch:
+                ch = -1                    # a mono mic into a stereo rack
+            elif ch + self.rack.n_ch > dev.max_in:
+                ch = 0
+        self._apply_audio(in_device=value, in_channel=ch, input_enabled=True)
+
+    def _pick_in_channel(self, _e=None):
+        ch = devices_mod.parse_channel(self.in_ch.get())
+        if ch != self.rack.in_channel:
+            self._apply_audio(in_channel=ch)
+
+    def _pick_out_device(self, _e=None):
+        value = self._out_choices.get(self.out_box.get())
+        dev = self._out_devs.get(value if value is not None else self._default_out)
+        ch = self.rack.out_channel
+        if dev is not None and ch + 2 > max(dev.max_out, 2):
+            ch = 0
+        self._apply_audio(out_device=value, out_channel=ch)
+
+    def _pick_out_channel(self, _e=None):
+        ch = max(0, devices_mod.parse_channel(self.out_ch.get()))
+        if ch != self.rack.out_channel:
+            self._apply_audio(out_channel=ch)
+
+    def _rescan_devices(self):
+        """Look for hardware plugged in since start.
+
+        PortAudio can only re-enumerate with every stream closed, and device
+        indices shift when it does, so the rack is stopped, the devices it was
+        using are found again by name, and it starts again."""
+        r = self.rack
+        was_running = r.running
+        keep_in = devices_mod.identity(r.in_device, "in")
+        keep_out = devices_mod.identity(r.out_device, "out")
+        if was_running:
+            r.stop()
+        try:
+            devices_mod.rescan()
+        except Exception as exc:
+            log.error("rescan failed: %s", exc)
+        lost = []
+        new_in = devices_mod.find(keep_in, "in", r.sr) if keep_in else None
+        new_out = devices_mod.find(keep_out, "out", r.sr) if keep_out else None
+        if keep_in and new_in is None:
+            lost.append(f"{keep_in['name']} · {keep_in['api']}")
+        if keep_out and new_out is None:
+            lost.append(f"{keep_out['name']} · {keep_out['api']}")
+        r.set_audio(in_device=new_in, out_device=new_out)
+        if was_running:
+            try:
+                r.start()
+            except Exception as exc:
+                messagebox.showerror("audio device", str(exc))
+        self.start_btn.config(text="stop" if r.running else "start")
+        self._fill_devices()
+        if lost:
+            messagebox.showinfo(
+                "audio device",
+                "no longer plugged in, using the system default instead:\n\n"
+                + "\n".join(lost))
+
+    def _refresh_audio_io(self):
+        r = self.rack
+        mic, out = r.take_peaks()
+        now = time.monotonic()
+        self.in_meter.clips(r.mic_clips)
+        self.out_meter.clips(r.clips)
+
+        if not r.running:
+            self.in_meter.idle()
+            self.out_meter.idle()
+            text = "input off" if not r.duplex else "stopped"
+            note = "" if r.duplex else "no input device opened"
+        elif not r.duplex_active:
+            self.in_meter.idle()
+            self.out_meter.push(out, now)
+            text = "input off" if not r.duplex else "no input"
+            note = ("output only" if not r.input_error
+                    else f"input would not open: {r.input_error}")
+        else:
+            # No new block since the last look is not silence -- a 4096-sample
+            # block arrives only every 85 ms, slower than this refresh.
+            fresh = r.mic_blocks != self._in_blocks_seen
+            self._in_blocks_seen = r.mic_blocks
+            self.in_meter.push(mic if fresh else None, now)
+            self.out_meter.push(out, now)
+            if fresh:
+                self._in_zero_ticks = self._in_zero_ticks + 1 if mic == 0.0 else 0
+            level = self.in_meter.level
+            if self._in_zero_ticks >= 10:
+                # Exact zeros, not merely quiet: a real microphone always has
+                # some noise, so this is a mute switch or a zeroed input level.
+                text = "silent (muted?)"
+            elif level <= LevelMeter.FLOOR:
+                text = "below -60 dB"
+            else:
+                text = f"{level:.0f} dB"
+            note = {"duplex": "in and out share one clock",
+                    "separate": "in and out on separate clocks"}.get(r.io_mode, r.io_mode)
+        if self.in_level.get() != text:
+            self.in_level.set(text)
+        if self.io_note.get() != note:
+            self.io_note.set(note)
+
+    def _current_port(self):
+        if self.osc.running:
+            return self.osc.port
+        try:
+            return int(self.port_var.get())
+        except (AttributeError, ValueError):
+            return self.osc.port
 
     def _block_note(self):
         ms = 1000.0 * self.rack.block / self.rack.sr
@@ -311,8 +789,59 @@ class App:
         body.rowconfigure(0, weight=1)
         self.slot_ui = [self._build_slot(body, i) for i in range(N_SLOTS)]
 
+        routing = ttk.Frame(body)
+        routing.grid(row=1, column=0, columnspan=N_SLOTS, sticky="ew", pady=(8, 0))
+        ttk.Label(routing, text="routing").pack(side="left")
+        self.routing_var = tk.StringVar(value=self.rack.routing)
+        for mode, label in (("shared", "shared"), ("split", "queen split"),
+                            ("personal", "one model per client")):
+            ttk.Radiobutton(routing, text=label, value=mode,
+                            variable=self.routing_var,
+                            command=self._change_routing).pack(side="left", padx=2)
+        self.routing_help = tk.StringVar()
+        ttk.Label(routing, textvariable=self.routing_help,
+                  foreground="#666").pack(side="left", padx=(10, 0))
+
+        self.personal_row = ttk.Frame(body)
+        self.personal_row.grid(row=4, column=0, columnspan=N_SLOTS, sticky="ew",
+                               pady=(4, 0))
+        ttk.Label(self.personal_row, text="clients get").pack(side="left")
+        self.assign_box = ttk.Combobox(self.personal_row, state="readonly", width=12,
+                                       values=list(personal_mod.ASSIGN_MODES))
+        self.assign_box.set(self.rack.personal.assign)
+        self.assign_box.pack(side="left", padx=4)
+        self.assign_box.bind("<<ComboboxSelected>>",
+                             lambda e: self.rack.personal.set_assign(self.assign_box.get()))
+        self.personal_rows = [ParamRow(self.personal_row, self.reg["personal.max"],
+                                       width=140, label_width=18)]
+        self.personal_rows[0].frame.pack(side="left", padx=8)
+        self.personal_status = tk.StringVar(value="")
+        ttk.Label(self.personal_row, textvariable=self.personal_status,
+                  foreground="#666").pack(side="left", padx=6)
+        self._change_routing(apply=False)
+
+        sections = ttk.Frame(body)
+        sections.grid(row=2, column=0, columnspan=N_SLOTS, sticky="ew", pady=(4, 0))
+        self.zones_var = tk.BooleanVar(value=self.rack.zones.get("on") >= 0.5)
+        ttk.Checkbutton(sections, text="camera sections set slot levels",
+                        variable=self.zones_var,
+                        command=self._toggle_zones).pack(side="left")
+        self.layout_box = ttk.Combobox(sections, state="readonly", width=10,
+                                       values=list(zones_mod.LAYOUTS))
+        self.layout_box.set(self.rack.zones.layout)
+        self.layout_box.pack(side="left", padx=6)
+        self.layout_box.bind("<<ComboboxSelected>>",
+                             lambda e: self.rack.zones.set_layout(self.layout_box.get()))
+        self.zone_rows = [ParamRow(sections, self.reg[k], width=110, label_width=18)
+                          for k in ("zones.depth", "zones.floor")]
+        for r in self.zone_rows:
+            r.frame.pack(side="left", fill="x", expand=True, padx=4)
+        self.zone_status = tk.StringVar(value="")
+        ttk.Label(sections, textvariable=self.zone_status,
+                  foreground="#666").pack(side="left", padx=6)
+
         bottom = ttk.Frame(body)
-        bottom.grid(row=1, column=0, columnspan=N_SLOTS, sticky="ew", pady=(8, 0))
+        bottom.grid(row=3, column=0, columnspan=N_SLOTS, sticky="ew", pady=(6, 0))
         self.master_rows = [ParamRow(bottom, self.reg["master.level"], width=240)]
         self.master_meter = ttk.Progressbar(bottom, maximum=100.0, length=200)
         self.master_meter.pack(side="left", padx=8)
@@ -349,6 +878,20 @@ class App:
                         command=lambda s=slot, v=solo_var:
                         setattr(s, "solo", v.get())).pack(side="left", padx=6)
 
+        src_row = ttk.Frame(frame)
+        src_row.pack(fill="x", pady=(4, 0))
+        ttk.Label(src_row, text="input").pack(side="left")
+        source = ttk.Combobox(src_row, state="readonly", width=8, values=list(SOURCES))
+        source.set(slot.source)
+        source.pack(side="left", padx=4)
+        source.bind("<<ComboboxSelected>>",
+                    lambda e, k=i, box=None: self._change_source(k))
+        section = ttk.Progressbar(src_row, maximum=100.0, length=70)
+        section.pack(side="right")
+        section_text = tk.StringVar(value="")
+        ttk.Label(src_row, textvariable=section_text, foreground="#666").pack(
+            side="right", padx=3)
+
         rows = [ParamRow(frame, self.reg[f"slot{n}.level"], width=110, label_width=16),
                 ParamRow(frame, self.reg[f"slot{n}.mix"], width=110, label_width=16)]
         ttk.Separator(frame).pack(fill="x", pady=6)
@@ -360,10 +903,39 @@ class App:
 
         ui = {"name": name, "info": info, "picker": picker, "meter": meter,
               "params_frame": params_frame, "rows": rows, "switches": [on],
-              "param_rows": []}
+              "param_rows": [], "source": source, "section": section,
+              "section_text": section_text}
         self._refill_picker(ui, i)
         self._rebuild_slot_params(ui, i)
         return ui
+
+    def _change_source(self, i):
+        self.rack.set_slot_source(i, self.slot_ui[i]["source"].get())
+
+    ROUTING_HELP = {'shared': 'every slot hears the input mixer (mic, synth, file, test)', 'split': "the queen's voice into slots 1 and 3, everyone else's into 2 and 4, levels matched -- let the room find her by timbre", 'personal': "every phone gets its own private copy of a model, fed only by that person's voice; the four slots become templates"}
+
+    def _change_routing(self, apply=True):
+        mode = self.routing_var.get()
+        if apply:
+            try:
+                self.rack.set_routing(mode)
+            except Exception as exc:
+                messagebox.showerror("routing", str(exc))
+                self.routing_var.set(self.rack.routing)
+                mode = self.rack.routing
+        self.routing_help.set(self.ROUTING_HELP.get(mode, ""))
+        if mode == "personal":
+            self.personal_row.grid()
+        else:
+            self.personal_row.grid_remove()
+        for i, ui in enumerate(self.slot_ui):
+            ui["source"].set(self.rack.slots[i].source)
+            ui["source"].config(state="disabled" if mode == "personal" else "readonly")
+        if hasattr(self, "input_var"):
+            self.input_var.set(self.rack.current_input())
+
+    def _toggle_zones(self):
+        self.rack.zones.set("on", 1.0 if self.zones_var.get() else 0.0)
 
     def _refill_picker(self, ui, i):
         entries = self.library.downloaded()
@@ -390,9 +962,9 @@ class App:
             try:
                 self.rack.load_slot(i, path)
             except Exception as exc:
-                self.root.after(0, lambda e=exc:
+                self._post(lambda e=exc:
                                 messagebox.showerror("load failed", str(e)))
-            self.root.after(0, self._after_model_change, i)
+            self._post(self._after_model_change, i)
 
         threading.Thread(target=work, daemon=True).start()
 
@@ -421,8 +993,8 @@ class App:
                            else "no model")
             return
         ms = 1000.0 * slot.latency / self.rack.sr
-        ui["info"].set(f"{'mono' if slot.model.is_input_mono() else 'stereo'} in, "
-                       f"{slot.latency} smp ({ms:.0f} ms)")
+        ui["info"].set(f"{'mono' if slot.input_mono else 'stereo'} in, "
+                       f"{slot.latency} smp ({ms:.0f} ms), {slot.device}")
         if not slot.params:
             ttk.Label(ui["params_frame"], text="no parameters",
                       foreground="#666").pack(anchor="w")
@@ -498,29 +1070,32 @@ class App:
                   wraplength=1000, justify="left").pack(anchor="w", pady=(2, 0))
         self._queen_why()
 
-        voices_box = ttk.LabelFrame(self.tab_synth, text="voices", padding=6)
-        voices_box.pack(fill="both", expand=True)
-        cols = ttk.Frame(voices_box)
-        cols.pack(fill="both", expand=True)
-        n_voices = self.rack.synth.n_voices
-        per_col = 4
-        self.voice_ui = []
-        for v in range(n_voices):
-            col = v // per_col
-            if v % per_col == 0:
-                cols.columnconfigure(col, weight=1, uniform="voice")
-            box = ttk.LabelFrame(cols, text=f"voice {v + 1}  (client {v + 1})",
-                                 padding=5)
-            box.grid(row=v % per_col, column=col, sticky="ew", padx=4, pady=2)
-            rows = []
-            for p in ("pitch", "rough", "level"):
-                key = f"synth.voice{v + 1}.{p}"
-                if key in self.reg:
-                    rows.append(ParamRow(box, self.reg[key], width=150,
-                                         label_width=16))
-            meter = ttk.Progressbar(box, maximum=100.0)
-            meter.pack(fill="x", pady=(3, 0))
-            self.voice_ui.append({"rows": rows, "meter": meter})
+        voices_box = ttk.LabelFrame(self.tab_synth, text="who is here", padding=6)
+        voices_box.pack(fill="both", expand=True, pady=(6, 0))
+        ttk.Label(
+            voices_box,
+            text="One row per connected phone. Voice N is whoever holds slot N on "
+                 "the backend, so client 3 on the dashboard is voice 3 here; a new "
+                 "person taking a freed slot starts from silence. Rows leave when "
+                 "the phone does.",
+            foreground="#666", wraplength=1040, justify="left").pack(anchor="w")
+        cols = ("who", "platform", "level", "pitch", "rough", "bus", "model")
+        self.voice_tree = ttk.Treeview(voices_box, columns=cols,
+                                       show="tree headings", height=12)
+        self.voice_tree.heading("#0", text="voice")
+        for col, text, width, anchor in (("who", "who", 220, "w"),
+                                         ("platform", "phone", 70, "center"),
+                                         ("level", "level", 170, "w"),
+                                         ("pitch", "pitch", 80, "e"),
+                                         ("rough", "rough", 60, "e"),
+                                         ("bus", "into", 70, "center"),
+                                         ("model", "own model", 190, "w")):
+            self.voice_tree.heading(col, text=text)
+            self.voice_tree.column(col, width=width, anchor=anchor)
+        self.voice_tree.column("#0", width=90)
+        self.voice_tree.pack(fill="both", expand=True)
+        self.voice_tree.tag_configure("queen", background="#fff3c4")
+        self.voice_tree.tag_configure("leaving", foreground="#999")
 
     def _change_scale(self, _e=None):
         try:
@@ -672,6 +1247,8 @@ class App:
             side="right", padx=4)
         ttk.Button(top, text="load defaults", command=self._load_defaults).pack(
             side="right", padx=4)
+        ttk.Button(top, text="what to send", command=self._show_send_list).pack(
+            side="right", padx=4)
 
         panes = ttk.Frame(self.tab_osc)
         panes.pack(fill="both", expand=True, pady=(8, 0))
@@ -708,6 +1285,13 @@ class App:
         self.map_tree.column("value", width=55, anchor="e")
         self.map_tree.pack(fill="both", expand=True)
         self.map_tree.bind("<<TreeviewSelect>>", self._pick_mapping)
+        # Several at once: ctrl- or shift-click, or a group header for every
+        # route in it; Delete removes, ctrl+A selects them all.
+        self.map_tree.bind("<Delete>", lambda e: self._remove_mapping())
+        self.map_tree.bind("<BackSpace>", lambda e: self._remove_mapping())
+        self.map_tree.bind("<Control-a>", self._select_all_routes)
+        self._map_iids = {}
+        self._map_rows = {}
         self._build_map_editor(right)
 
     def _build_map_editor(self, parent):
@@ -888,8 +1472,7 @@ class App:
                 f"defaults?"):
             return
         rows = oscmap.default_mappings(self.rack.synth.n_voices, N_SLOTS)
-        with self.osc._lock:
-            self.osc.mappings = rows
+        self.osc.mappings = rows
         self._refill_map_tree()
         messagebox.showinfo(
             "defaults loaded",
@@ -968,19 +1551,50 @@ class App:
         existing.enabled = True
         self._refill_map_tree()
 
+    @staticmethod
+    def _map_iid(m) -> str:
+        # Keyed by the route itself rather than its position, so removing one
+        # route does not silently shift which row means which route.
+        return f"route:{id(m)}"
+
+    def _selected_mappings(self):
+        """Every route selected, a group header counting as all of its routes."""
+        chosen, seen = [], set()
+        for iid in self.map_tree.selection():
+            if iid.startswith("group:"):
+                kids = self.map_tree.get_children(iid)
+            else:
+                kids = (iid,)
+            for kid in kids:
+                m = self._map_iids.get(kid)
+                if m is not None and id(m) not in seen:
+                    seen.add(id(m))
+                    chosen.append(m)
+        return chosen
+
+    def _select_all_routes(self, _e=None):
+        self.map_tree.selection_set(list(self._map_iids))
+        return "break"
+
     def _remove_mapping(self):
-        sel = self.map_tree.selection()
-        if sel and sel[0].isdigit():
-            i = int(sel[0])
-            if 0 <= i < len(self.osc.mappings):
-                self.osc.remove(self.osc.mappings[i])
+        doomed = self._selected_mappings()
+        if not doomed:
+            messagebox.showinfo("remove", "Select one or more routes, or a group "
+                                          "header, in the routing list first.")
+            return
+        if len(doomed) > 1 and not messagebox.askyesno(
+                "remove", f"Remove {len(doomed)} routes?"):
+            return
+        gone = {id(m) for m in doomed}
+        # One assignment, so the receiver rebuilds its address index once.
+        self.osc.mappings = [m for m in self.osc.mappings if id(m) not in gone]
         self._refill_map_tree()
 
     def _pick_mapping(self, _e=None):
-        sel = self.map_tree.selection()
-        if not sel or not sel[0].isdigit():
-            return
-        m = self.osc.mappings[int(sel[0])]
+        chosen = self._selected_mappings()
+        if len(chosen) != 1 or len(self.map_tree.selection()) != 1:
+            return  # several selected: that is for removing, not editing
+        m = chosen[0]
         group = oscmap.group_label(m.address)
         if group in self.src_group["values"]:
             self.src_group.set(group)
@@ -1006,18 +1620,30 @@ class App:
                 f"{m.last_out:.2f}")
 
     def _refill_map_tree(self):
+        keep = set(self.map_tree.selection())
+        opened = {n for n in self.map_tree.get_children()
+                  if not self.map_tree.item(n, "open")}
         self.map_tree.delete(*self.map_tree.get_children())
+        self._map_iids, self._map_rows = {}, {}
         # grouped the same way as the sources, so a client's routes sit together
         by_group = {}
-        for i, m in enumerate(self.osc.mappings):
-            by_group.setdefault(oscmap.group_label(m.address), []).append((i, m))
+        for m in self.osc.mappings:
+            by_group.setdefault(oscmap.group_label(m.address), []).append(m)
         for group in sorted(by_group, key=lambda g: (
                 0 if g == "swarm" else 1, g)):
             node = f"group:{group}"
-            self.map_tree.insert("", "end", iid=node, text=group, open=True)
-            for i, m in by_group[group]:
-                self.map_tree.insert(node, "end", iid=str(i),
-                                     text=m.address, values=self._map_row(m))
+            self.map_tree.insert("", "end", iid=node,
+                                 text=f"{group}  ({len(by_group[group])})",
+                                 open=node not in opened)
+            for m in by_group[group]:
+                iid = self._map_iid(m)
+                row = self._map_row(m)
+                self._map_iids[iid] = m
+                self._map_rows[iid] = row
+                self.map_tree.insert(node, "end", iid=iid, text=m.address, values=row)
+        still = [i for i in keep if self.map_tree.exists(i)]
+        if still:
+            self.map_tree.selection_set(still)
 
     def _save_map(self):
         self.preset_dir.mkdir(parents=True, exist_ok=True)
@@ -1048,6 +1674,9 @@ class App:
             side="left")
         ttk.Button(top, text="download selected", command=self._download).pack(
             side="left", padx=4)
+        self.cancel_btn = ttk.Button(top, text="cancel", command=self._cancel_downloads,
+                                     state="disabled")
+        self.cancel_btn.pack(side="left", padx=(0, 10))
         for i in range(N_SLOTS):
             ttk.Button(top, text=f"-> slot {i + 1}", width=8,
                        command=lambda k=i: self._library_to_slot(k)).pack(
@@ -1055,6 +1684,16 @@ class App:
         self.lib_status = tk.StringVar(value="")
         ttk.Label(top, textvariable=self.lib_status, foreground="#666").pack(
             side="left", padx=10)
+        ttk.Label(self.tab_lib,
+                  text="ctrl-click or shift-click to select several; ctrl+A selects "
+                       "all. -> slot N with several selected fills slot N and the "
+                       "slots after it, in list order.",
+                  foreground="#666").pack(anchor="w")
+        self._dl_queue = deque()     # (entry, then) waiting to download
+        self._dl_busy = set()        # model ids queued or downloading
+        self._dl_thread = None
+        self._dl_cancel = threading.Event()
+        self._dl_done = self._dl_total = 0
 
         self.lib_progress = ttk.Progressbar(self.tab_lib, maximum=100.0)
         self.lib_progress.pack(fill="x", pady=4)
@@ -1069,6 +1708,8 @@ class App:
             self.lib_tree.heading(col, text=text)
             self.lib_tree.column(col, width=width, anchor=anchor)
         self.lib_tree.pack(fill="both", expand=True)
+        self.lib_tree.bind("<Control-a>", lambda e: (
+            self.lib_tree.selection_set(self.lib_tree.get_children()), "break")[1])
         self._refill_library()
 
     def _refill_library(self):
@@ -1088,53 +1729,140 @@ class App:
         def work():
             try:
                 n = self.library.refresh()
-                self.root.after(0, self._refill_library)
-                self.root.after(0, lambda: self.lib_status.set(f"{n} models"))
+                self._post(self._refill_library)
+                self._post(lambda: self.lib_status.set(f"{n} models"))
             except Exception as exc:
-                self.root.after(0, lambda e=exc:
+                self._post(lambda e=exc:
                                 messagebox.showerror("refresh failed", str(e)))
-                self.root.after(0, lambda: self.lib_status.set("refresh failed"))
+                self._post(lambda: self.lib_status.set("refresh failed"))
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _selected_entry(self):
-        sel = self.lib_tree.selection()
-        return self.library.entries[int(sel[0])] if sel else None
+    def _selected_entries(self):
+        """The selected models, in the order they appear in the list."""
+        order = {iid: n for n, iid in enumerate(self.lib_tree.get_children())}
+        sel = sorted(self.lib_tree.selection(), key=lambda i: order.get(i, 0))
+        return [self.library.entries[int(i)] for i in sel]
 
-    def _download(self, then=None):
-        entry = self._selected_entry()
-        if entry is None:
-            messagebox.showinfo("download", "Pick a model first.")
+    def _set_local_cell(self, entry, text):
+        for iid in self.lib_tree.get_children():
+            if self.library.entries[int(iid)] is entry:
+                self.lib_tree.set(iid, "have", text)
+                return
+
+    def _download(self, then_for=None):
+        """Queue every selected model. `then_for(entry)` may return a callback
+        to run with the file's path once that model is on disk."""
+        entries = self._selected_entries()
+        if not entries:
+            messagebox.showinfo("download", "Select one or more models first.")
             return
-        if self.library.have(entry):
-            if then:
-                then(self.library.path_for(entry))
-            return
-
-        def progress(got, total):
-            pct = 100.0 * got / total if total else 0.0
-            self.root.after(0, lambda: self.lib_progress.config(value=pct))
-            self.root.after(0, lambda: self.lib_status.set(
-                f"{entry.name}: {got / 1e6:.0f} of {total / 1e6:.0f} MB"))
-
-        def work():
-            try:
-                path = self.library.fetch(entry, progress=progress)
-                self.root.after(0, self._refill_library)
-                self.root.after(0, self._refill_all_pickers)
-                self.root.after(0, lambda: self.lib_status.set(f"{entry.name} ready"))
-                self.root.after(0, lambda: self.lib_progress.config(value=0))
+        queued = 0
+        for e in entries:
+            then = then_for(e) if then_for else None
+            if self.library.have(e):
                 if then:
-                    self.root.after(0, lambda: then(path))
-            except Exception as exc:
-                self.root.after(0, lambda e=exc:
-                                messagebox.showerror("download failed", str(e)))
-                self.root.after(0, lambda: self.lib_status.set("download failed"))
+                    then(self.library.path_for(e))
+                continue
+            if e.model_id in self._dl_busy:
+                continue  # already on its way; a second copy would just race it
+            self._dl_busy.add(e.model_id)
+            self._dl_queue.append((e, then))
+            self._set_local_cell(e, "queued")
+            queued += 1
+        if queued:
+            self._dl_total += queued
+            self._start_downloads()
+        elif not self._dl_busy:
+            self.lib_status.set("already downloaded")
 
-        threading.Thread(target=work, daemon=True).start()
+    def _start_downloads(self):
+        if self._dl_thread is not None and self._dl_thread.is_alive():
+            return
+        self._dl_cancel.clear()
+        self.cancel_btn.config(state="normal")
+        self._dl_thread = threading.Thread(target=self._download_worker, daemon=True)
+        self._dl_thread.start()
+
+    def _cancel_downloads(self):
+        self._dl_cancel.set()
+        self.lib_status.set("cancelling...")
+
+    def _download_worker(self):
+        # One at a time: parallel downloads only split the bandwidth, make the
+        # progress meaningless, and leave several half-written files when the
+        # window is closed.
+        while self._dl_queue and not self._dl_cancel.is_set():
+            entry, then = self._dl_queue.popleft()
+            n = self._dl_done + 1
+            last = [0.0]
+
+            def progress(got, total, entry=entry, n=n):
+                now = time.monotonic()
+                if now - last[0] < 0.1 and got < total:
+                    return  # ten updates a second is plenty for a progress bar
+                last[0] = now
+                pct = 100.0 * got / total if total else 0.0
+                text = (f"downloading {n} of {self._dl_total}: {entry.name}  "
+                        f"{got / 1e6:.0f} of {total / 1e6:.0f} MB")
+                self._post(lambda: (self.lib_progress.config(value=pct),
+                                            self.lib_status.set(text),
+                                            self._set_local_cell(entry, f"{pct:.0f}%")))
+
+            try:
+                path = self.library.fetch(entry, progress=progress,
+                                          cancel=self._dl_cancel.is_set)
+                self._dl_done += 1
+                self._post(lambda e=entry: self._set_local_cell(e, "yes"))
+                self._post(self._refill_all_pickers)
+                if then:
+                    self._post(lambda t=then, pth=path: t(pth))
+            except Exception as exc:
+                cancelled = self._dl_cancel.is_set()
+                self._post(lambda e=entry: self._set_local_cell(e, ""))
+                if not cancelled:
+                    self._post(lambda e=exc, en=entry: messagebox.showerror(
+                        "download failed", f"{en.name}: {e}"))
+            finally:
+                self._dl_busy.discard(entry.model_id)
+
+        # whatever is left was cancelled
+        while self._dl_queue:
+            entry, _ = self._dl_queue.popleft()
+            self._dl_busy.discard(entry.model_id)
+            self._post(lambda e=entry: self._set_local_cell(e, ""))
+        done, total = self._dl_done, self._dl_total
+        self._dl_done = self._dl_total = 0
+        cancelled = self._dl_cancel.is_set()
+
+        def finish():
+            self.lib_progress.config(value=0)
+            self.cancel_btn.config(state="disabled")
+            have = len(self.library.downloaded())
+            what = "cancelled" if cancelled else "done"
+            self.lib_status.set(f"{what}: {done} of {total} downloaded  |  "
+                                f"{len(self.library.entries)} models, {have} local")
+
+        self._post(finish)
 
     def _library_to_slot(self, i):
-        self._download(then=lambda path, k=i: self._load_path(k, path))
+        """Download if needed, then load. With several selected, fill slot i
+        and the ones after it in list order; models past slot 4 are only
+        downloaded."""
+        entries = self._selected_entries()
+        if not entries:
+            messagebox.showinfo("load", "Select one or more models first.")
+            return
+        targets = {id(e): i + n for n, e in enumerate(entries) if i + n < N_SLOTS}
+        if len(entries) > N_SLOTS - i:
+            self.lib_status.set(f"{len(entries) - (N_SLOTS - i)} model(s) past slot 4 "
+                                f"will only be downloaded")
+
+        def then_for(e):
+            k = targets.get(id(e))
+            return None if k is None else (lambda path, k=k: self._load_path(k, path))
+
+        self._download(then_for=then_for)
 
     def _refill_all_pickers(self):
         for i, ui in enumerate(self.slot_ui):
@@ -1152,7 +1880,23 @@ class App:
         self._rebuild_chain()
         self._refill_targets()
 
+    def _post(self, fn, *args) -> None:
+        """Run `fn(*args)` on the window's own thread, at the next tick."""
+        self._ui_calls.put((fn, args))
+
+    def _drain_ui_calls(self) -> None:
+        for _ in range(500):
+            try:
+                fn, args = self._ui_calls.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                fn(*args)
+            except Exception as exc:
+                log.error("window update failed: %s", exc)
+
     def _refresh(self):
+        self._drain_ui_calls()
         # Only the visible tab's sliders are pulled back in; refreshing every
         # row on every tick is what would make this window feel sticky.
         tab = self.tabs.index(self.tabs.select())
@@ -1165,11 +1909,11 @@ class App:
         elif tab == 1:
             for r in self.synth_rows:
                 r.refresh()
-            for v in self.voice_ui:
-                for r in v["rows"]:
-                    r.refresh()
+            if self._tick % 3 == 0:
+                self._refresh_voices()
             self.scale_label.set(
-                f"   {self.rack.synth.active_count()} voice(s) sounding")
+                f"   {self.rack.synth.connected_count()} client(s) connected, "
+                f"{self.rack.synth.active_count()} sounding")
             if self.scale_box.get() != self.rack.synth.scale_name():
                 self.scale_box.set(self.rack.synth.scale_name())
             if self.queen_box.get() != self.rack.synth.queen_mode_name():
@@ -1186,9 +1930,32 @@ class App:
         for i, ui in enumerate(self.slot_ui):
             ui["meter"]["value"] = meter_value(self.rack.slots[i].peak)
         self.master_meter["value"] = meter_value(self.rack.master_peak)
-        if tab == 1:
-            for i, v in enumerate(self.voice_ui):
-                v["meter"]["value"] = meter_value(self.rack.synth.voices[i].peak)
+        if tab == 0:
+            z = self.rack.zones
+            for i, ui in enumerate(self.slot_ui):
+                g = z.gains[i]
+                ui["section"]["value"] = float(np.clip((gain_to_db(g) + 30.0) / 36.0,
+                                                       0.0, 1.0) * 100.0)
+                txt = f"cam {gain_to_db(g):+.0f} dB" if z.source != "none" else "cam -"
+                if ui["section_text"].get() != txt:
+                    ui["section_text"].set(txt)
+                if ui["source"].get() != self.rack.slots[i].source:
+                    ui["source"].set(self.rack.slots[i].source)
+            if self.rack.routing == "personal":
+                pl = self.rack.personal
+                spares = sum(len(v) for v in pl.spares.values())
+                loading = sum(1 for k in pl.pending if k[0] != "spare")
+                fail = "; ".join(f"slot {t + 1}: {e}" for t, e in pl.failures.items())
+                self.personal_status.set(
+                    f"{len(pl.instances)} private model(s) running, {loading} loading, "
+                    f"{spares} spare" + (f"   FAILED {fail}" if fail else ""))
+                for r in self.personal_rows:
+                    r.refresh()
+                if self.routing_var.get() != self.rack.routing:
+                    self.routing_var.set(self.rack.routing)
+                    self._change_routing(apply=False)
+            counts = " ".join(f"{c:.0f}" for c in z.counts)
+            self.zone_status.set(f"source: {z.source}   people per section: {counts}")
 
         if self.rack.running:
             src = self.rack.current_input()
@@ -1205,6 +1972,8 @@ class App:
         if tab == 3:
             self._refresh_osc()
 
+        self.address.refresh()
+        self._refresh_audio_io()
         cpu = self.rack.cpu.sample() if self._tick % 5 == 0 else self.rack.cpu.machine
         if self._tick % 5 == 0:
             self.graph.push(self.rack.load_pct if self.rack.running else 0.0, cpu)
@@ -1213,6 +1982,60 @@ class App:
                 f"budget {self.rack.load_pct:.0f}%   cpu {cpu:.0f}%")
         self._tick += 1
         self._pending_after = self.root.after(100, self._refresh)
+
+    def _refresh_voices(self):
+        """Rebuild the who-is-here table. Rows are keyed by slot, so a voice
+        keeps its row while it plays and loses it when its phone leaves."""
+        sy = self.rack.synth
+        qi = sy.queen_index
+        wanted = {}
+        for v in sy.connected():
+            who = v.name or (v.uid if v.uid else "(no roster yet)")
+            if v.uid and v.name:
+                who = f"{v.name}  ({v.uid})"
+            if v.index == qi:
+                who = "\u265b " + who
+            bars = int(round(min(max(v.level, 0.0), 1.0) * 20))
+            level = "\u2588" * bars + "\u2591" * (20 - bars)
+            bus = "-"
+            if self.rack.split:
+                bus = "queen" if v.queen_w >= 0.5 else "crowd"
+            model = "-"
+            if self.rack.routing == "personal":
+                model = self.rack.personal.describe_voice(v.index)
+                if (self.rack.personal.assign == "queen apart" and v.queen_w >= 0.5
+                        and ("queen",) in self.rack.personal.instances):
+                    model = "queen's model"
+            tags = []
+            if v.index == qi:
+                tags.append("queen")
+            if not v.connected:
+                tags.append("leaving")
+            wanted[str(v.slot)] = (f"voice {v.slot}",
+                                   (who, v.platform or "", level,
+                                    f"{v.pitch:.0f} Hz", f"{v.rough:.2f}", bus, model),
+                                   tuple(tags))
+        for iid in self.voice_tree.get_children():
+            if iid not in wanted:
+                self.voice_tree.delete(iid)
+        for iid in sorted(wanted, key=int):
+            text, values, tags = wanted[iid]
+            if self.voice_tree.exists(iid):
+                self.voice_tree.item(iid, values=values, tags=tags)
+            else:
+                self.voice_tree.insert("", "end", iid=iid, text=text,
+                                       values=values, tags=tags)
+
+    def _show_send_list(self):
+        from morpho_rack import format_send_list
+
+        text = format_send_list(self.osc.mappings, self.rack.zones.get("on") >= 0.5)
+        win = tk.Toplevel(self.root)
+        win.title("what the backend needs to send")
+        box = tk.Text(win, width=90, height=40, font=("Consolas", 10))
+        box.insert("1.0", text)
+        box.config(state="disabled")
+        box.pack(fill="both", expand=True)
 
     def _refresh_osc(self):
         if self.osc.running:
@@ -1250,13 +2073,18 @@ class App:
                 self.seen_tree.insert(node, "end", iid=address, text=address,
                                       values=(shown,))
 
-        for i, m in enumerate(self.osc.mappings):
-            if self.map_tree.exists(str(i)):
-                self.map_tree.item(str(i), values=self._map_row(m))
-        rows = sum(1 for n in self.map_tree.get_children()
-                   for _ in self.map_tree.get_children(n))
-        if rows != len(self.osc.mappings):
+        if len(self._map_iids) != len(self.osc.mappings) or any(
+                self._map_iid(m) not in self._map_iids for m in self.osc.mappings):
             self._refill_map_tree()
+        else:
+            # Only rows whose numbers moved are touched: seventy routes rewritten
+            # ten times a second was enough to make the list lag under the mouse.
+            for m in self.osc.mappings:
+                iid = self._map_iid(m)
+                row = self._map_row(m)
+                if self._map_rows.get(iid) != row:
+                    self._map_rows[iid] = row
+                    self.map_tree.item(iid, values=row)
 
     def _on_close(self):
         if self._pending_after is not None:
