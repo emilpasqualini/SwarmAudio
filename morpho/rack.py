@@ -996,7 +996,9 @@ class Rack:
             "routing",
             dsp.Param("mode", "routing", 0.0, len(self.ROUTINGS) - 1.0, 0.0, ""),
             lambda: float(self.ROUTINGS.index(self.routing)),
-            lambda v: self.set_routing(self.ROUTINGS[int(round(v)) % len(self.ROUTINGS)]),
+            lambda v: self.set_routing(
+                self.ROUTINGS[int(round(v)) % len(self.ROUTINGS)]
+            ),
         )
         for p in personal_mod.PERSONAL_PARAMS:
             add(
@@ -1596,8 +1598,9 @@ class Rack:
             except Exception as exc:
                 self._in_stream = None
                 self.input_error = str(exc).splitlines()[0][:160]
-                log.warning("no audio input (%s); the mic source is off",
-                            self.input_error)
+                log.warning(
+                    "no audio input (%s); the mic source is off", self.input_error
+                )
 
         if self._stream is None:
             self._stream = sd.OutputStream(
@@ -1624,16 +1627,27 @@ class Rack:
                     pass
             setattr(self, name, None)
 
-    def set_audio(self, in_device="keep", out_device="keep", in_channel=None,
-                  out_channel=None, input_enabled=None) -> None:
+    def set_audio(
+        self,
+        in_device="keep",
+        out_device="keep",
+        in_channel=None,
+        out_channel=None,
+        input_enabled=None,
+    ) -> None:
         """Change devices or channels, restarting the stream if it is running.
 
         "keep" leaves a device as it is; None means the system default. If the
         new settings will not open, the old ones are put back and the error is
         raised, so a bad choice never leaves the rack silent.
         """
-        old = (self.in_device, self.out_device, self.in_channel,
-               self.out_channel, self.duplex)
+        old = (
+            self.in_device,
+            self.out_device,
+            self.in_channel,
+            self.out_channel,
+            self.duplex,
+        )
         was_running = self.running
         if was_running:
             self.stop()
@@ -1653,8 +1667,13 @@ class Rack:
         try:
             self.start()
         except Exception:
-            (self.in_device, self.out_device, self.in_channel,
-             self.out_channel, self.duplex) = old
+            (
+                self.in_device,
+                self.out_device,
+                self.in_channel,
+                self.out_channel,
+                self.duplex,
+            ) = old
             try:
                 self.start()
             except Exception as exc:
@@ -1670,28 +1689,108 @@ class Rack:
 
 
 # ---------------------------------------------------------------------------
-# finding a model's register
+# finding a model's register, and its knobs
 # ---------------------------------------------------------------------------
+#
+# Both probes ask the same question of a private copy of a slot's model:
+# "does the output still follow the input?". Morpho models are timbre
+# transfer, and a model pushed off its manifold does not go quiet -- it goes
+# its own way, often loudly -- so output level points at exactly the wrong
+# settings. What disappears off-manifold is the *following*, and that is
+# measured: the probe tone carries a slow 5 Hz swell, and the score is how
+# strongly that swell shows in the output's envelope (track) times how much
+# of the output's energy stays within an octave of the tone (focus).
 
-def probe_pitch(rack, index: int, span: int = 24, step: int = 3,
-                progress=None) -> dict:
-    """Which input register does this slot's model respond to most?
+PROBE_F_MOD = 5.0  # burst rate, well under RAVE's ~23 Hz latent rate
+PROBE_FRAME = 256  # envelope frame, ~187 Hz -- plenty for 5 Hz
 
-    Morpho models are timbre transfer: each answers best in the register of
-    its training data, and an input a few octaves off comes back thin or as
-    noise. This measures that instead of guessing. A private copy of the
-    slot's model is loaded (the live one keeps playing and keeps its stream
-    state untouched), fed a short tone burst at every ``step`` semitones
-    within ±``span`` of the current input register, and the output level per
-    step is recorded after the model has settled.
 
-    The reference register is the geometric mean of the connected synth
-    voices' pitches — the register the room is actually singing in — or
-    middle C with nobody connected. Returns a dict with ``offsets``,
-    ``levels``, ``best`` (semitones to set the pre-chain repitch to),
-    ``confidence`` (peak level over the median; near 1 means the model does
-    not care) and ``f_ref``/``f_best`` in Hz. Blocking for a few seconds:
-    call from a background thread, never the audio path.
+def _follow_score(
+    sl,
+    f: float,
+    params: np.ndarray,
+    block: int,
+    sr: int,
+    n_ch: int,
+    settle: int,
+    measure: int,
+):
+    """(rms, track, focus) of one model's answer to a swelling tone at f Hz."""
+    w = 2.0 * np.pi * f / sr
+    w_mod = 2.0 * np.pi * PROBE_F_MOD / sr
+    pos, taken = 0, []
+    for b in range(settle + measure):
+        j = np.arange(pos, pos + block, dtype=np.float64)
+        pos += block
+        # A few harmonics so models trained on voices or instruments have
+        # more than a bare sine to recognise; the raised-cosine swell is what
+        # the scoring listens for in the output.
+        swell = 0.5 - 0.5 * np.cos(w_mod * j)
+        mono = (
+            (0.3 * np.sin(w * j) + 0.12 * np.sin(2 * w * j) + 0.06 * np.sin(3 * w * j))
+            * swell
+        ).astype(np.float32)
+        x = np.repeat(mono[None, :], n_ch, axis=0)
+        y = sl.model.forward(x, params)
+        if b >= settle:
+            taken.append(y[0].astype(np.float64))
+    y0 = np.concatenate(taken)
+    rms = float(np.sqrt(np.mean(y0**2)))
+
+    # track: does the output's envelope carry the 5 Hz swell?
+    n_fr = y0.shape[0] // PROBE_FRAME
+    env = np.sqrt(
+        np.mean(y0[: n_fr * PROBE_FRAME].reshape(n_fr, PROBE_FRAME) ** 2, axis=1)
+    )
+    env -= env.mean()
+    ph = 2.0 * np.pi * PROBE_F_MOD * (np.arange(n_fr) * PROBE_FRAME / sr)
+    norm = float(np.sqrt(np.sum(env**2)) * np.sqrt(n_fr / 2.0))
+    if norm > 1e-9:
+        track = min(
+            float(np.hypot(np.dot(env, np.cos(ph)), np.dot(env, np.sin(ph))) / norm),
+            1.0,
+        )
+    else:
+        track = 0.0
+
+    # focus: does the output live where the input does?
+    spec = np.abs(np.fft.rfft(y0)) ** 2
+    freqs = np.fft.rfftfreq(y0.shape[0], 1.0 / sr)
+    valid = freqs >= 30.0
+    total = float(spec[valid].sum())
+    band = valid & (freqs >= f / 2.0) & (freqs <= f * 2.0)
+    focus = float(spec[band].sum()) / total if total > 1e-12 else 0.0
+    return rms, track, focus
+
+
+def _probe_reference(rack, index: int, repitched: bool) -> float:
+    """The register to probe in: where the connected voices sing (geometric
+    mean of their pitches, middle C with nobody there), through the slot's
+    repitch when ``repitched`` -- so the knob probe hears what the model will
+    actually be fed once the register probe has done its work."""
+    voiced = [v.pitch for v in rack.synth.voices if v.connected and v.pitch > 0]
+    f = float(np.exp(np.mean(np.log(voiced)))) if voiced else 261.6
+    if repitched:
+        for eff in rack.slots[index].pre.effects:
+            if eff.name == "pitch" and eff.enabled:
+                f *= 2.0 ** (eff.values["semitones"] / 12.0)
+    return min(max(f, 30.0), rack.sr * 0.45)
+
+
+def probe_pitch(rack, index: int, span: int = 30, step: int = 3, progress=None) -> dict:
+    """Which input register does this slot's model answer in?
+
+    Plays the swelling probe tone at every ``step`` semitones within
+    ±``span`` of the reference register and scores each step by
+    track · focus (see above); steps quieter than 2% of the loudest are
+    gated out. A private copy of the model is loaded, so the live one keeps
+    playing and keeps its stream state.
+
+    Returns ``offsets``, ``levels`` (the scores), ``best`` (semitones for
+    the pre-chain repitch), ``confidence`` (peak score over the median; near
+    1 means the model does not care), ``f_ref``/``f_best`` in Hz, and the
+    raw ``rms``/``track``/``focus`` curves for the log. Blocking for some
+    seconds: call from a background thread, never the audio path.
     """
     slot = rack.slots[index]
     if slot.model is None or slot.path is None:
@@ -1699,46 +1798,192 @@ def probe_pitch(rack, index: int, span: int = 24, step: int = 3,
     # The rack raises the whole process to high priority; drop this thread
     # below normal so probing never starves the models that are playing.
     personal_mod.PersonalLayer._lower_own_priority()
-    path, block, sr, n_ch = slot.path, rack.block, rack.sr, rack.n_ch
-
-    voiced = [v.pitch for v in rack.synth.voices if v.connected and v.pitch > 0]
-    f_ref = float(np.exp(np.mean(np.log(voiced)))) if voiced else 261.6
+    block, sr, n_ch = rack.block, rack.sr, rack.n_ch
+    f_ref = _probe_reference(rack, index, repitched=False)
 
     sl = Slot(index, sr, block, n_ch)
-    sl.load(path, device=rack.device)
+    sl.load(slot.path, device=rack.device)
     try:
-        offsets = [o for o in range(-span, span + 1, step)
-                   if 30.0 <= f_ref * 2.0 ** (o / 12.0) <= sr * 0.45]
-        settle = max(3, int(np.ceil(sl.latency / block)) + 2)
-        measure = 6
-        levels = []
+        offsets = [
+            o
+            for o in range(-span, span + 1, step)
+            if 30.0 <= f_ref * 2.0 ** (o / 12.0) <= sr * 0.45
+        ]
+        settle = max(3, int(np.ceil(sl.latency / block)) + 3)
+        measure = max(4, int(np.ceil(0.7 * sr / block)))  # 3.5 swell cycles
+        rms_c, track_c, focus_c = [], [], []
         for k, off in enumerate(offsets):
             if progress is not None:
                 progress(k + 1, len(offsets))
-            f = f_ref * 2.0 ** (off / 12.0)
-            w = 2.0 * np.pi * f / sr
-            pos, acc, cnt = 0, 0.0, 0
-            for b in range(settle + measure):
-                j = np.arange(pos, pos + block, dtype=np.float64)
-                pos += block
-                # A few harmonics so models trained on voices or instruments
-                # have more than a bare sine to recognise.
-                mono = (0.3 * np.sin(w * j) + 0.12 * np.sin(2 * w * j)
-                        + 0.06 * np.sin(3 * w * j)).astype(np.float32)
-                x = np.repeat(mono[None, :], n_ch, axis=0)
-                y = sl.model.forward(x, sl.param_smoothed)
-                if b >= settle:
-                    acc += float(np.mean(y.astype(np.float64) ** 2))
-                    cnt += 1
-            levels.append(float(np.sqrt(acc / max(cnt, 1))))
+            rms, track, focus = _follow_score(
+                sl,
+                f_ref * 2.0 ** (off / 12.0),
+                sl.param_smoothed,
+                block,
+                sr,
+                n_ch,
+                settle,
+                measure,
+            )
+            rms_c.append(rms)
+            track_c.append(track)
+            focus_c.append(focus)
+
+        loudest = max(rms_c, default=0.0)
+        levels = [
+            (t * fo if r >= 0.02 * loudest else 0.0)
+            for r, t, fo in zip(rms_c, track_c, focus_c)
+        ]
         peak = max(levels) if levels else 0.0
         med = float(np.median(levels)) if levels else 0.0
         best = offsets[int(np.argmax(levels))] if levels else 0
-        confidence = peak / med if med > 1e-6 else 1.0
-        log.info("slot %d register probe: best %+d st (%.0f Hz), peak/median %.2f",
-                 index + 1, best, f_ref * 2.0 ** (best / 12.0), confidence)
-        return {"offsets": offsets, "levels": levels, "best": float(best),
-                "confidence": float(confidence), "f_ref": f_ref,
-                "f_best": f_ref * 2.0 ** (best / 12.0)}
+        confidence = peak / med if med > 1e-6 else (2.0 if peak > 0.05 else 1.0)
+        log.info(
+            "slot %d register probe: best %+d st (%.0f Hz), " "peak/median %.2f",
+            index + 1,
+            best,
+            f_ref * 2.0 ** (best / 12.0),
+            confidence,
+        )
+        for o, r, t, fo, s in zip(offsets, rms_c, track_c, focus_c, levels):
+            log.debug(
+                "  %+3d st  rms %.3f  track %.2f  focus %.2f  -> %.3f", o, r, t, fo, s
+            )
+        return {
+            "offsets": offsets,
+            "levels": levels,
+            "best": float(best),
+            "confidence": float(confidence),
+            "f_ref": f_ref,
+            "f_best": f_ref * 2.0 ** (best / 12.0),
+            "rms": rms_c,
+            "track": track_c,
+            "focus": focus_c,
+        }
+    finally:
+        sl.unload()
+
+
+def probe_params(rack, index: int, progress=None) -> dict:
+    """Where do this model's own knobs follow the input best?
+
+    Same question and same score as :func:`probe_pitch`, asked of the
+    model's declared parameters (the Morpho plugin's macro knobs -- for RAVE
+    typically Chaos, Z edit index, Z scale, Z offset) instead of the input
+    register. The probe tone sits at the register the model will actually
+    hear: the reference register through the slot's repitch, so running the
+    register probe first and this one second composes.
+
+    The search is coordinate descent from the knobs' current values: each
+    used parameter in declaration order is swept over a coarse grid (its
+    discrete label points if it has labels) with the others held, the best
+    value kept; continuous parameters then get a second, finer sweep around
+    the winner. Nothing can come out worse than the starting point, because
+    the starting point is always among the candidates.
+
+    Returns ``values`` ([(row, name, value)] for the best setting),
+    ``score``, ``baseline`` (the score of the current setting),
+    ``improvement`` (score/baseline), ``f_probe`` and ``evals``. Blocking
+    for some seconds; call from a background thread.
+    """
+    slot = rack.slots[index]
+    if slot.model is None or slot.path is None:
+        raise RuntimeError("no model in this slot")
+    if not slot.params:
+        raise RuntimeError("this model declares no parameters")
+    personal_mod.PersonalLayer._lower_own_priority()
+    block, sr, n_ch = rack.block, rack.sr, rack.n_ch
+    f_probe = _probe_reference(rack, index, repitched=True)
+
+    sl = Slot(index, sr, block, n_ch)
+    sl.load(slot.path, device=rack.device)
+    try:
+        settle = max(3, int(np.ceil(sl.latency / block)) + 3)
+        measure = max(4, int(np.ceil(0.5 * sr / block)))  # 2.5 swell cycles
+        vec = sl.param_targets.copy()
+        for spec in slot.params:  # start from the knobs as they are set now
+            if spec.row < vec.shape[0]:
+                vec[spec.row] = slot.get_param(spec.row)
+
+        def grid(spec, around=None):
+            if not spec.continuous and spec.labels and len(spec.labels) > 1:
+                return (
+                    None
+                    if around is not None
+                    else [i / (len(spec.labels) - 1) for i in range(len(spec.labels))]
+                )
+            if around is None:
+                return [0.0, 0.25, 0.5, 0.75, 1.0]
+            return [
+                min(max(around + d, 0.0), 1.0) for d in (-0.15, -0.075, 0.075, 0.15)
+            ]
+
+        # Every candidate that will be scored, counted up front for progress.
+        plan = [1]
+        for spec in slot.params:
+            plan.append(len(grid(spec)))
+            if grid(spec, around=0.5) is not None:
+                plan.append(4)
+        total, done = sum(plan), 0
+
+        def score_at(v):
+            nonlocal done
+            done += 1
+            if progress is not None:
+                progress(done, total)
+            rms, track, focus = _follow_score(
+                sl, f_probe, v, block, sr, n_ch, settle, measure
+            )
+            return track * focus if rms > 1e-4 else 0.0
+
+        baseline = score_at(vec)
+        best = baseline
+        for refine in (False, True):
+            for spec in slot.params:
+                if spec.row >= vec.shape[0]:
+                    continue
+                cands = grid(spec, around=vec[spec.row] if refine else None)
+                if cands is None:
+                    continue
+                for c in cands:
+                    if abs(c - vec[spec.row]) < 1e-3:
+                        continue  # already the current value
+                    trial = vec.copy()
+                    trial[spec.row] = c
+                    s = score_at(trial)
+                    if s > best:
+                        best, vec = s, trial
+
+        # Capped: a baseline of almost zero (the current knobs answer with
+        # nothing) makes the ratio meaningless past "much better".
+        improvement = (
+            min(best / baseline, 99.0)
+            if baseline > 1e-6
+            else (99.0 if best > 0.05 else 1.0)
+        )
+        values = [
+            (spec.row, spec.name, float(vec[spec.row]))
+            for spec in slot.params
+            if spec.row < vec.shape[0]
+        ]
+        log.info(
+            "slot %d knob probe at %.0f Hz: %s -- score %.3f vs %.3f "
+            "(%.1fx, %d evals)",
+            index + 1,
+            f_probe,
+            ", ".join(f"{n} {v:.2f}" for _, n, v in values),
+            best,
+            baseline,
+            improvement,
+            done,
+        )
+        return {
+            "values": values,
+            "score": float(best),
+            "baseline": float(baseline),
+            "improvement": float(improvement),
+            "f_probe": f_probe,
+            "evals": done,
+        }
     finally:
         sl.unload()

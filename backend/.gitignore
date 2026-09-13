@@ -3,3 +3,4 @@ dist/
 certs/
 hive.config.json
 .DS_Store
+vision/models

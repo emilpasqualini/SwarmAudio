@@ -40,7 +40,7 @@ import devices as devices_mod
 import dsp
 import oscmap
 import synth as synth_mod
-from rack import N_SLOTS, SOURCES, gain_to_db, probe_pitch
+from rack import N_SLOTS, SOURCES, gain_to_db, probe_params, probe_pitch
 import personal as personal_mod
 import zones as zones_mod
 
@@ -978,6 +978,57 @@ class App:
             f"{res['best']:+.0f} st → {res['f_best']:.0f} Hz "
             f"({res['confidence']:.1f}×)")
 
+    def _auto_params(self, i):
+        """Probe where slot i's model parameters follow the input best."""
+        slot = self.rack.slots[i]
+        if slot.model is None or slot.path is None or not slot.params:
+            messagebox.showinfo("auto parameters",
+                                "Load a model with parameters into this slot first.")
+            return
+        ui = self.slot_ui[i]
+        if ui["probing"]:
+            return
+        ui["probing"] = True
+        ui["p_auto_btn"].config(state="disabled")
+        ui["p_auto_status"].set("probing...")
+
+        def work():
+            try:
+                res = probe_params(
+                    self.rack, i,
+                    progress=lambda k, total: self._post(
+                        ui["p_auto_status"].set, f"probing {k}/{total}"))
+            except Exception as exc:
+                self._post(lambda e=exc: messagebox.showerror("auto parameters",
+                                                              str(e)))
+                res = None
+            self._post(self._auto_params_done, i, res)
+
+        threading.Thread(target=work, daemon=True,
+                         name=f"autoparams-{i + 1}").start()
+
+    def _auto_params_done(self, i, res):
+        ui = self.slot_ui[i]
+        ui["probing"] = False
+        try:
+            ui["p_auto_btn"].config(state="normal")
+        except tk.TclError:
+            return  # the model changed mid-probe and the row was rebuilt
+        if res is None:
+            ui["p_auto_status"].set("failed")
+            return
+        if res["improvement"] < 1.15:
+            # The knobs as they stand follow about as well as anything found;
+            # moving them would change the sound for no gain in answer.
+            ui["p_auto_status"].set("already good, left as is")
+            return
+        # Applied to the live slot's targets, so the change slews in like any
+        # fader move. An OSC route driving one of these knobs will simply
+        # take it over again -- the route wins, as everywhere else.
+        for row, _name, value in res["values"]:
+            self.rack.slots[i].set_param(row, value)
+        ui["p_auto_status"].set(f"set ({res['improvement']:.1f}× vs before)")
+
     ROUTING_HELP = {'shared': 'every slot hears the input mixer (mic, synth, file, test)', 'split': "the queen's voice into slots 1 and 3, everyone else's into 2 and 4, levels matched -- let the room find her by timbre", 'personal': "every phone gets its own private copy of a model, fed only by that person's voice; the four slots become templates"}
 
     def _change_routing(self, apply=True):
@@ -1071,6 +1122,14 @@ class App:
                 ui["param_rows"].append(
                     ParamRow(ui["params_frame"], self.reg[key], width=110,
                              label_width=16))
+        auto_row = ttk.Frame(ui["params_frame"])
+        auto_row.pack(fill="x", pady=(2, 0))
+        ui["p_auto_btn"] = ttk.Button(auto_row, text="auto", width=5,
+                                      command=lambda k=i: self._auto_params(k))
+        ui["p_auto_btn"].pack(side="left")
+        ui["p_auto_status"] = tk.StringVar(value="")
+        ttk.Label(auto_row, textvariable=ui["p_auto_status"],
+                  foreground="#666").pack(side="left", padx=4)
 
     # -- synth tab ----------------------------------------------------------
 
