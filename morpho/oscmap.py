@@ -544,7 +544,7 @@ GLOBAL_FIELDS = [
     ("crest", 12, 1.0, 6.0, "peak/RMS: 1 steady, high spiky"),
 ]
 
-# /hive/cam, v3. Wide message is f,i,i then thirteen floats.
+# /hive/cam, v4. Wide message is f,i,i then 21 floats (24 arguments).
 CAM_FIELDS = [
     ("count", 1, 0.0, 12.0, "people in view"),
     ("clusters", 2, 0.0, 5.0, "groups of people"),
@@ -557,6 +557,13 @@ CAM_FIELDS = [
     ("nearest", 13, 0.0, 0.6, "distance to nearest neighbour"),
     ("stillness", 14, 0.0, 1.0, "fraction standing still"),
     ("occupancy", 15, 0.0, 1.0, "how much of the room is in use"),
+    # v4: optical flow over the whole picture -- works for a packed dark room
+    # where per-person tracking gives out.
+    ("flowEnergy", 16, 0.0, 1.0, "how much the picture moves (v4)"),
+    ("flowCoherence", 17, 0.0, 1.0, "1 = the whole crowd moves one way (v4)"),
+    ("beat", 20, 0.0, 6.0, "the crowd's rhythm, Hz (v4)"),
+    ("densityMean", 22, 0.0, 1.0, "mean of the people-density grid (v4)"),
+    ("largestShare", 23, 0.0, 1.0, "fraction in the largest group (v4)"),
 ]
 
 # /hive/mix, v3. Wide message is f,i,i then six.
@@ -586,6 +593,13 @@ CAM_SOURCES = _family("/hive/cam", CAM_FIELDS, "/hive/cam") + [
     ("/hive/cam/centroid", 1, 0.0, 1.0, "where everyone is, top-bottom"),
     ("/hive/cam/flow", 0, -1.0, 1.0, "crowd drift, left-right per second"),
     ("/hive/cam/flow", 1, -1.0, 1.0, "crowd drift, top-bottom per second"),
+    # v4 fields whose per-field twin is not simply the field name at arg 0.
+    ("/hive/cam/flowCentroid", 0, 0.0, 1.0, "where the motion is, left-right (v4)"),
+    ("/hive/cam/flowCentroid", 1, 0.0, 1.0, "where the motion is, top-bottom (v4)"),
+    ("/hive/cam/beat", 1, 0.0, 1.0, "how clear the crowd's rhythm is (v4)"),
+    ("/hive/cam", 18, 0.0, 1.0, "flowCx, from the wide message"),
+    ("/hive/cam", 19, 0.0, 1.0, "flowCy, from the wide message"),
+    ("/hive/cam", 21, 0.0, 1.0, "beatStrength, from the wide message"),
 ]
 MIX_SOURCES = _family("/hive/mix", MIX_FIELDS, "/hive/mix")
 
@@ -789,9 +803,6 @@ DEFAULT_NOTES = [
     "swarm energy         -> all slots' input high cut",
     "swarm motion         -> all slots' first model parameter",
     "swarm count          -> master reverb size",
-    "cam spread           -> master reverb pre-delay",
-    "cam armsUp           -> master level",
-    "cam stillness        -> synth level (a still room quietens)",
     "cam person / cluster -> slot N level, from camera section N",
 ]
 
@@ -808,6 +819,7 @@ DASHBOARD_KEYS = (
     "dev/activity",
     "dev/mag",
     "dev/turn",
+    "dev/queen",
     "swarm/count",
     "swarm/energy",
     "swarm/motion",
@@ -838,6 +850,19 @@ DASHBOARD_KEYS = (
     "cam/cluster",
     "cam/person",
     "cam/status",
+    # v4: the flow field. grid, gridflow and density are 48-96 floats per
+    # frame each, so they matter most on the "off" list.
+    "cam/flowEnergy",
+    "cam/flowCoherence",
+    "cam/flowCentroid",
+    "cam/beat",
+    "cam/densityMean",
+    "cam/largestShare",
+    "cam/shares",
+    "cam/clusterIndexed",
+    "cam/grid",
+    "cam/gridflow",
+    "cam/density",
     "mix/distance",
     "mix/beesInCrowd",
     "mix/queenInCrowd",
@@ -928,6 +953,10 @@ def estimate_rate(
             rate += people * cam_fps
         elif k == "cam/cluster":
             rate += clusters * cam_fps
+        elif k == "cam/clusterIndexed":
+            rate += clusters * 3 * cam_fps  # share, n and pos per group
+        elif k == "cam/status":
+            rate += 1.0  # rides on the once-a-second roster
         elif fam == "cam":
             rate += cam_fps
     for w in wide:

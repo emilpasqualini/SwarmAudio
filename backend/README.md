@@ -58,7 +58,7 @@ big enough to scan from across a table.
 | crowd shoves / shove strength | the motion under an animal pushes it along the camera's flow: *strength* × flow speed × the cell's energy (0.5 = a draught, 3 = a gale) |
 | hidden queen | game mode: no crown anywhere but this dashboard and OSC — the room has to find her by ear; the crown still passes on collision, silently |
 | osc global / osc mix | switch the meta-parameter families |
-| osc parameters | one chip per small message (dev/acc, swarm/energy, global/tempo, cam/person, mix/covered, …) — off = not sent; saves Wi-Fi traffic for whatever nobody patches |
+| osc parameters | one chip per small message (dev/acc, swarm/energy, global/tempo, cam/person, mix/covered, …) — off = not sent; saves Wi-Fi traffic for whatever nobody patches. **morpho set** applies morpho_rack's send list in one click (mutes everything it does not route and switches /hive/sample off); **everything** turns it all back on |
 | ♛ / × in the device table | crown a device / drop it now |
 | test tones | sonify the swarm on this Mac |
 

@@ -87,6 +87,8 @@ the next start unless `--in-device` or `--out-device` is given.
 | **cam** bar and `cam +N dB` | The gain the camera section is applying to this slot right now. `cam -` means no camera data is arriving, so no camera gain is applied. |
 | **level** | The slot's fader, −40 to +12 dB. The camera gain comes on top of it. |
 | **dry/wet** | 0 is only the slot's input, delayed to line up with the model; 1 is only the model. Starts at the model's own default. |
+| **pitch** | The pre-chain's input repitch, surfaced here because moving the source into a model's register decides whether the model answers at all. ±36 semitones (÷8 to ×8); past about two octaves the grain repetition of the shifter becomes audible texture. The same knob as on the chain tab, and it follows **link all slots** there. |
+| **repitch** + **auto** | The tick enables the repitch. **auto** probes the model: a private copy is loaded (playback is untouched), fed tone bursts every 3 semitones across ±2 octaves around the register the connected voices are singing in, and the output level per step is measured. The step that answers loudest becomes the pitch setting, the repitch is switched on, and the grey text reports it, e.g. `+9 st → 440 Hz (4.2×)` — the × is peak over median response. `flat response` means the model answers every register alike and nothing is changed. Takes a few seconds; only this slot is set, even with *link all slots* on. |
 | model parameters | One fader per parameter the model declares, 0 to 1. For RAVE models these are usually Chaos, Z edit index, Z scale and Z offset; DDSP models have pitch shift and harmonic, noise and reverb mix. Models without parameters show `no parameters`. |
 | meter, bottom | The slot's output level, on a decibel scale covering the top 60 dB. |
 
@@ -226,7 +228,7 @@ removing, not editing, so the editor stays as it was.
 
 | control | what it does |
 |---|---|
-| **from** group dropdown | swarm and client 1 … 16 are always listed; global, camera, mix and events appear once something from them has arrived. Picking **client N** also switches **controls** to **synth voice N**. |
+| **from** group dropdown | swarm, global, camera, mix and client 1 … 16 are always listed, with the documented range for every address; events and anything undocumented appear once something from them has arrived. Picking **client N** also switches **controls** to **synth voice N**. |
 | address | The addresses in that group. Picking one fills in **arg** and a sensible input range, and the grey line underneath says what the value means and its units. You can also type an address. |
 | **arg** | Which number in the message to use, counting from 0. |
 | **learn** | Press, then move a phone or wave at the camera: the next address carrying a number fills in **from** and **arg**. Shows `...` while waiting. Needs **listen** on. |
@@ -398,7 +400,7 @@ the cap low for heavy models, or use a larger block.
 
 ## Routing the swarm
 
-Protocol v3 has five families and the osc tab groups both lists by them:
+Protocol v4 has five families and the osc tab groups both lists by them:
 
 - **swarm** — how *much* the crowd moves. Loudness and brightness.
 - **global** — how it moves: alike, in step, what rhythm, everyone or a soloist.
@@ -411,7 +413,7 @@ that arrives. **use seen** fills the input range from what an address actually
 sent in the room, which beats guessing and is the difference between a fader
 that sweeps and one pinned at an end.
 
-**load defaults** installs 45 routes:
+**load defaults** installs 67 routes:
 
 | from | to | why |
 |---|---|---|
@@ -423,9 +425,6 @@ that sweeps and one pinned at an end.
 | swarm energy | all slots' input high cut | harder movement opens the sound |
 | swarm motion | all slots' first model parameter | turning stirs the latent |
 | swarm count | master reverb size | more people, bigger room |
-| cam spread | master reverb pre-delay | a crowd coming together closes the space |
-| cam armsUp | master level | |
-| cam stillness | synth level | a still room quietens |
 | cam person | slot N level, from section N | see camera sections below |
 
 **All four slots are equal.** Every route that shapes a model shapes all four
@@ -460,14 +459,16 @@ this out from the routing actually loaded. For the defaults:
 | per phone | `dev/activity`, `dev/turn`, `dev/mag` |
 | swarm | `swarm/count`, `swarm/energy`, `swarm/motion` |
 | global | `global/coherence`, `global/entropy`, `global/tempo`, `global/crest` |
-| camera | `cam/person`, `cam/spread`, `cam/armsUp`, `cam/stillness` |
+| camera | `cam/person` (the sections' head counts) |
 
-Everything else can go off: `dev/acc`, `dev/rel`, `dev/gyro`, `swarm/sync`, the
-other six `global/*`, the other twelve `cam/*`, all six `mix/*`, and all five
-wide messages (`/hive/sample`, `/hive/swarm`, `/hive/global`, `/hive/cam`,
-`/hive/mix`). `/hive/queen`, `join`, `leave`, `roster` and `schema` are always
-sent. With eight phones and six people in view that is roughly 4,400 messages a
-second down to 1,800, and most of the saving is the per-phone raw sensors.
+Everything else can go off: `dev/acc`, `dev/rel`, `dev/gyro`, `dev/queen`,
+`swarm/sync`, the other six `global/*`, the other 26 `cam/*` — including the
+v4 flow field's `cam/grid`, `cam/gridflow` and `cam/density`, 48-96 floats per
+frame each — all six `mix/*`, and all five wide messages (`/hive/sample`,
+`/hive/swarm`, `/hive/global`, `/hive/cam`, `/hive/mix`). `/hive/queen`,
+`join`, `leave`, `roster` and `schema` are always sent. With eight phones and
+six people in view that is roughly 5,100 messages a second down to 1,700, and
+most of the saving is the per-phone raw sensors.
 
 The default slews are 3 to 8 seconds on purpose, so the installation drifts
 rather than jumps. `slew` is seconds to travel the full output range.

@@ -403,7 +403,9 @@ class PitchShifter(Effect):
 
     name = "pitch"
     params = (
-        Param("semitones", "pitch", -24.0, 24.0, 0.0, "st"),
+        # ±36 st (÷8 .. ×8). Past about two octaves the grain repetition is
+        # audible as texture, which on a swarm of sines is a feature.
+        Param("semitones", "pitch", -36.0, 36.0, 0.0, "st"),
         Param("mix", "mix", 0.0, 1.0, 1.0, ""),
         Param("window", "grain", 20.0, 120.0, 45.0, "ms", "log"),
     )
@@ -414,11 +416,11 @@ class PitchShifter(Effect):
         self._phase = 0.0
 
     def process(self, x):
-        if not self.enabled or (
-            abs(self.values["semitones"]) < 1e-3 and self.values["mix"] >= 0.999
-        ):
-            if not self.enabled:
-                return x
+        # No neutral-setting bypass on purpose: at 0 st the taps still read
+        # half a window back, and snapping to the dry signal the moment a
+        # sweep crosses zero would click. Constant behaviour beats a shortcut.
+        if not self.enabled:
+            return x
         n_ch, n = x.shape
         window = max(int(self.values["window"] * 0.001 * self.sr), 64)
         size = 1 << int(np.ceil(np.log2(window + n + 2)))

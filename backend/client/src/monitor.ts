@@ -251,6 +251,27 @@ function updateMuteGrid(s: Settings): void {
   for (const [key, chip] of muteChips) chip.classList.toggle('on', !muted.has(key));
 }
 
+// --- mute presets: one click instead of forty chips. -----------------------
+//     The morpho set is what `python morpho_rack.py --send-list` reports for
+//     its default routing (morpho/README.md, "What the backend needs to
+//     send"): the per-phone smalls its voices ride on, the swarm and global
+//     numbers it routes, and the camera persons its sections count. It also
+//     turns the wide per-sample message off — morpho never reads it, and at
+//     60 Hz per phone it is the single biggest item on the wire.
+const MORPHO_KEEP = new Set([
+  'dev/activity', 'dev/mag', 'dev/turn',
+  'swarm/count', 'swarm/energy', 'swarm/motion',
+  'global/coherence', 'global/entropy', 'global/tempo', 'global/crest',
+  'cam/person', 'cam/status',
+]);
+function mutePresetButtons(): HTMLElement {
+  const morpho = el('button', { class: 'pill small quiet', text: 'morpho set', title: 'mute everything morpho_rack does not route, and switch /hive/sample off' });
+  morpho.onclick = () => { void patchSettings({ oscMute: MUTABLE.map((m) => m.key).filter((k) => !MORPHO_KEEP.has(k)), oscWide: false }); };
+  const everything = el('button', { class: 'pill small quiet', text: 'everything', title: 'unmute every message and switch /hive/sample back on' });
+  everything.onclick = () => { void patchSettings({ oscMute: [], oscWide: true }); };
+  return el('span', { class: 'row' }, morpho, everything);
+}
+
 /** Settings in four cards, spread over the columns so the page has no holes. */
 function settingsCard(title: string, ...rows: HTMLElement[]): HTMLElement {
   return el('div', { class: 'card stack' }, el('div', { class: 'section-label', text: title }), el('div', { class: 'settings' }, ...rows));
@@ -475,6 +496,7 @@ function buildPage(): void {
     el('div', { class: 'card stack' },
       el('div', { class: 'row between wrap' },
         el('div', { class: 'section-label', text: 'osc parameters — what goes out' }),
+        mutePresetButtons(),
         el('span', { class: 'note', text: 'one chip per small message; off = not sent. the wide messages follow the family switches in settings.' }),
       ),
       refs.muteGrid,
