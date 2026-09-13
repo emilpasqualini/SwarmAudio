@@ -6,3 +6,10 @@ __pycache__/
 morpho/models/*.nm
 morpho/models/*.part
 morpho/presets/
+
+# Claude Code session files
+.claude/
+
+# camera pipeline: virtualenv and downloaded model weights
+backend/vision/.venv/
+backend/vision/models/
