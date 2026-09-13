@@ -234,19 +234,22 @@ function streamingView(): HTMLElement {
 
   // Re-zero: the server holds the neutral pose (condition.ts), so the button
   // asks it rather than touching anything here — the bars keep showing raw
-  // sensor values either way.
-  const reset = el('button', { class: 'pill small quiet', text: t('reset') });
+  // sensor values either way. It sits right under the map, above the bars,
+  // because it is the one control someone reaches for mid-piece.
+  const reset = el('button', { class: 'pill small', text: t('reset') });
+  let resetFlash = 0;
   reset.onclick = () => {
+    clearTimeout(resetFlash);
     reset.disabled = true;
     reset.textContent = t('resetting');
     void (transport?.resetZero() ?? Promise.resolve(false)).then((ok) => {
       reset.disabled = false;
-      reset.textContent = t('reset');
-      if (!ok) { log.warn('reset refused by the server'); return; }
+      if (!ok) { reset.textContent = t('reset'); log.warn('reset refused by the server'); return; }
       log.step('neutral position reset');
-      reset.classList.add('on');
-      reset.classList.remove('quiet');
-      window.setTimeout(() => { reset.classList.remove('on'); reset.classList.add('quiet'); }, 700);
+      // The button is the accent colour already, so the confirmation is the
+      // word rather than a flash of colour.
+      reset.textContent = t('resetDone');
+      resetFlash = window.setTimeout(() => { reset.textContent = t('reset'); }, 1200);
     });
   };
 
@@ -267,6 +270,7 @@ function streamingView(): HTMLElement {
 
   const view = el('div', { class: 'stack' },
     el('div', { class: 'card stack' }, swarmMap.canvas, queenLine),
+    el('div', { class: 'card row wrap' }, reset, el('span', { class: 'note', text: t('resetHint') })),
     el('div', { class: 'card stack' },
       el('div', { class: 'section-label', text: t('acc') }),
       accAxes,
@@ -276,10 +280,7 @@ function streamingView(): HTMLElement {
       gyroAxes,
     ),
     statusLine,
-    el('div', { class: 'card stack' },
-      el('div', { class: 'row wrap' }, reset, el('span', { class: 'note', text: t('resetHint') })),
-      flips,
-    ),
+    el('div', { class: 'card' }, flips),
     el('div', { class: 'row', style: 'justify-content:center' }, leaveButton),
     el('p', { class: 'note center', text: t('keepOpen') }),
   );

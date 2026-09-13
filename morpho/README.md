@@ -36,6 +36,14 @@ The window has three rows at the top that stay visible, and five tabs: **rack**,
 current value on the left, and moves on its own when OSC or a preset changes it.
 A fader you are dragging is left alone until you let go.
 
+Every table here sorts: click a column heading to sort by it, click the same one
+again to turn the order around, and an arrow marks the column in use. Numbers
+sort as numbers even when they carry a unit, so `100 Hz` lands after `20 Hz`
+rather than before it, and text sorts without regard to case. The order survives
+the tables refilling themselves, so *who is here* stays sorted by level while
+people move, and grouped tables — *arriving* and *routing* — sort within each
+group rather than breaking it apart.
+
 ### Top bar
 
 | control | what it does |
@@ -87,6 +95,7 @@ the next start unless `--in-device` or `--out-device` is given.
 | **cam** bar and `cam +N dB` | The gain the camera section is applying to this slot right now. `cam -` means no camera data is arriving, so no camera gain is applied. |
 | **level** | The slot's fader, −40 to +12 dB. The camera gain comes on top of it. |
 | **dry/wet** | 0 is only the slot's input, delayed to line up with the model; 1 is only the model. Starts at the model's own default. |
+| **pan** | Where the slot sits between the two speakers, `L100` through `C` to `R100`, centre by default. Constant power, so a slot swept across the picture keeps its loudness on the way past, and the position ramps across each block, so an OSC route can sweep it without clicking. On a one-channel output the two sides are folded back together at the same law, so nothing changes there. |
 | **pitch** | The pre-chain's input repitch, surfaced here because moving the source into a model's register decides whether the model answers at all. ±36 semitones (÷8 to ×8); past about two octaves the grain repetition of the shifter becomes audible texture. The same knob as on the chain tab, and it follows **link all slots** there. |
 | **repitch** + **auto** | The tick enables the repitch. **auto** probes the model: a private copy is loaded (playback is untouched) and fed a tone with a slow 5 Hz swell, every 3 semitones across ±2½ octaves around the register the connected voices are singing in. Each step is scored not by loudness — a model pushed out of its register does not go quiet, it drones loudly on its own, which is exactly the wrong answer — but by whether the output still *follows* the input: how strongly the 5 Hz swell shows in the output's envelope, times how much of the output's energy stays within an octave of the probe tone. The winning step becomes the pitch setting, the repitch is switched on, and the grey text reports it, e.g. `+27 st → 1244 Hz (4.2×)` — the × is peak score over median. `flat response` means no register followed better than the rest and nothing is changed. Takes some seconds; only this slot is set, even with *link all slots* on. |
 | model parameters + **auto** | One fader per parameter the model declares, 0 to 1. For RAVE models these are usually Chaos, Z edit index, Z scale and Z offset; DDSP models have pitch shift and harmonic, noise and reverb mix. Models without parameters show `no parameters`. **auto** under the faders searches these knobs with the same follows-the-input score as the repitch auto, at the register the repitch delivers — so run the repitch auto first. Coordinate descent from the current values (coarse sweep per knob, then a finer one around each winner), so the result is never worse than where the faders stand; `already good, left as is` means exactly that. The winners slew in like a fader move. A knob an OSC route drives (the default routing drives p1 from swarm motion) is taken over again by the route. |
@@ -103,6 +112,7 @@ the next start unless `--in-device` or `--out-device` is given.
 | **empty section** | How far a slot drops when nobody stands in its section, −60 to 0 dB. Default −30. |
 | `source: …   people per section: …` | Where the head count comes from (`people`, `clusters`, or `none`) and how many people are in each section. |
 | **level**, bottom row, and its meter | The master level after all four slots, −40 to +12 dB, and the master output meter. |
+| **spread** / **centre** | Starting points for the four pans. **spread** places the slots at L70, L25, R25, R70 — four models on top of each other in the middle is a mush, and giving each one its own place is the cheapest way to hear them apart. **centre** puts them all back. Both just write the pan knobs, which OSC can drive afterwards like any other knob. |
 
 **Only in *one model per client* routing**, a further row appears:
 
@@ -184,7 +194,7 @@ an **enabled** tick and its faders:
 | **filter** | **low cut** 20 Hz to 2 kHz, off at 20 Hz · **high cut** 500 Hz to 20 kHz, off above 19 kHz · **resonance** 0.5 to 4, a peak at both cut-offs |
 | **gate** | **threshold** −90 to 0 dB, quieter than this closes it · **attack** 0.1 to 100 ms, how fast it opens · **release** 5 ms to 2 s, how fast it closes · **range** −90 to 0 dB, how far it closes |
 | **limiter** | **ceiling** −24 to 0 dB, nothing passes above it · **release** 10 ms to 1 s |
-| **reverb** | **mix** 0 to 1 · **size** of the room, 0 to 1 · **damping** 0 to 1, a darker tail · **width** 0 to 1, stereo spread, only with `--channels 2` · **pre-delay** 0 to 200 ms before the reverb starts |
+| **reverb** | **mix** 0 to 1 · **size** of the room, 0 to 1 · **damping** 0 to 1, a darker tail · **width** 0 to 1, stereo spread — the master chain runs on the stereo sum bus, so this works whatever `--channels` is set to · **pre-delay** 0 to 200 ms before the reverb starts |
 
 ### osc tab
 
@@ -597,6 +607,11 @@ the most expensive single effect and is off by default.
   at 32-sample chunk rate and interpolate back up, anchored on the previous
   block's gain. Without the anchor the ramp restarts every block and puts a step
   in the gain at the block rate, an audible buzz at 94 Hz.
+- **Pans ramp across the block and use a constant-power law.** A pan is a knob
+  the swarm can sweep, and a gain that jumps at the block boundary clicks at the
+  block rate. Constant power (−3 dB in the middle) is what keeps a slot from
+  getting louder as it crosses the centre. A muted slot's pan keeps following
+  its knob, so unmuting does not teleport it across the picture.
 - **OSC dispatch is one dictionary lookup.** Routes are indexed by address, so a
   message nobody routes costs about a microsecond however long the table grows.
 
@@ -611,4 +626,6 @@ the most expensive single effect and is off by default.
   Slots are reused when someone leaves; the new person gets a fresh voice.
 - The pitch shifter is a two-tap crossfading delay line. It adds no latency and
   its artefact is a mild warble, not the smearing a phase vocoder gives.
-- Processing width is mono by default (`--channels`). Output is always stereo.
+- Processing width is mono by default (`--channels`). The sum bus is always
+  stereo, which is where the slot pans live; a mono output device gets the two
+  sides folded back together.

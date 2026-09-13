@@ -2,7 +2,7 @@
 
 Signal path for one slot:
 
-    input -> pre-chain -> MODEL -> post-chain -> dry/wet -> level -> sum
+    input -> pre-chain -> MODEL -> post-chain -> dry/wet -> level -> pan -> sum
 
 The four slots all get the same input block and run at the same time on a
 thread pool. Inference never happens in the audio callback; the callback only
@@ -40,6 +40,11 @@ log = logging.getLogger("morpho_rack")
 
 N_SLOTS = 4
 MAX_PARAMS_PER_SLOT = 4
+
+# The slots sum into a stereo bus whatever the models run at, so a slot can sit
+# somewhere in the picture. A mono output device gets the two sides folded back
+# together in `_push_out`.
+OUT_CH = 2
 
 
 def _require(name: str, pip_name: str):
@@ -252,6 +257,49 @@ LEVEL = dsp.Param("level", "level", -40.0, 12.0, 0.0, "dB")
 MIX = dsp.Param("mix", "dry/wet", 0.0, 1.0, 1.0, "")
 SWITCH = dsp.Param("switch", "on", 0.0, 1.0, 1.0, "")
 
+
+class PanParam(dsp.Param):
+    """-1 hard left, 0 centre, +1 hard right, written the way a desk writes it."""
+
+    __slots__ = ()
+
+    def format(self, value: float) -> str:
+        if abs(value) < 0.005:
+            return "C"
+        return f"{'L' if value < 0 else 'R'}{abs(value) * 100:.0f}"
+
+
+PAN = PanParam("pan", "pan", -1.0, 1.0, 0.0, "")
+
+
+def pan_law(position, n: int = 0, previous=None):
+    """Constant-power gains for one block: -3 dB in the middle, so sweeping a
+    slot across the picture does not make it louder on the way past.
+
+    Given the previous position, the gains ramp across the block instead of
+    stepping, which is what keeps an OSC-driven sweep from clicking.
+    """
+    p1 = float(min(max(position, -1.0), 1.0))
+    if previous is None or n <= 0 or abs(p1 - previous) < 1e-6:
+        p = p1
+    else:
+        p = np.linspace(previous, p1, n, dtype=np.float32)
+    a = (np.asarray(p, dtype=np.float32) + 1.0) * (np.pi / 4.0)
+    return np.cos(a), np.sin(a)
+
+
+def sum_stereo(bus, block, gl=1.0, gr=1.0) -> None:
+    """Add one slot's output to the stereo bus.
+
+    A mono slot is placed with the two gains; a stereo one keeps its own sides
+    and the gains act as a balance between them.
+    """
+    left = block[0]
+    right = block[1] if block.shape[0] > 1 else left
+    bus[0] += left * gl
+    bus[1] += right * gr
+
+
 # What a slot listens to. "all" is the input mixer (mic, synth, file, test);
 # "queen" and "crowd" are the two halves of the synth in split routing.
 SOURCES = ("all", "queen", "crowd", "off")
@@ -328,6 +376,10 @@ class Slot:
         self.solo = False
         self.mix = 1.0
         self.gain = 1.0
+        # Where this slot sits between the speakers, -1..+1. Ramped per block
+        # from `_pan_p`, so a swarm-driven sweep is smooth.
+        self.pan = 0.0
+        self._pan_p = 0.0
         self.param_slew = 0.25
         self.source = "all"
         # Set by the camera sections every block; ramped inside process().
@@ -493,6 +545,12 @@ class Slot:
                 cur[spec.row] += (tgt[spec.row] - cur[spec.row]) * self.param_slew
             else:
                 cur[spec.row] = tgt[spec.row]
+
+    def pan_gains(self, n: int):
+        """This block's pan gains, ramped from where the slot sat last block."""
+        gl, gr = pan_law(self.pan, n, self._pan_p)
+        self._pan_p = float(min(max(self.pan, -1.0), 1.0))
+        return gl, gr
 
     def process(self, x: np.ndarray) -> np.ndarray:
         """One block. Runs on the pool, so grad mode is handled inside the
@@ -680,8 +738,10 @@ class Rack:
         self.latency = 0
 
         # The master chain is what protects the PA: everything else is taste.
-        self.master_reverb = dsp.Reverb(sr, n_ch)
-        self.master_limiter = dsp.Limiter(sr, n_ch)
+        # The master chain sits after the pans, so it is stereo whatever the
+        # models run at.
+        self.master_reverb = dsp.Reverb(sr, OUT_CH)
+        self.master_limiter = dsp.Limiter(sr, OUT_CH)
         self.master_limiter.enabled = True
 
         self.underruns = 0
@@ -885,6 +945,14 @@ class Rack:
                 MIX,
                 lambda s=slot: s.mix,
                 lambda v, s=slot: setattr(s, "mix", v),
+            )
+            add(
+                f"slot{n}.pan",
+                "pan",
+                g,
+                PAN,
+                lambda s=slot: s.pan,
+                lambda v, s=slot: setattr(s, "pan", v),
             )
             add(
                 f"slot{n}.on",
@@ -1262,6 +1330,12 @@ class Rack:
         width = outdata.shape[1]
         left = min(self.out_channel, width - 1)
         right = left + 1
+        if y.shape[0] > 1 and right >= width:
+            # Only one output channel left: fold the pair back together at the
+            # same constant-power law the pans used, so a centred slot keeps
+            # its level instead of doubling.
+            outdata[:, left] = (y[0] + y[1]) * 0.70710678
+            return
         outdata[:, left] = y[0]
         if right < width:
             outdata[:, right] = y[1] if y.shape[0] > 1 else y[0]
@@ -1347,7 +1421,7 @@ class Rack:
             slots = [s for s in self.slots if s.model is not None]
             any_solo = any(s.solo for s in slots)
 
-        mix = np.zeros((self.n_ch, self.block), dtype=np.float32)
+        mix = np.zeros((OUT_CH, self.block), dtype=np.float32)
         gains = self.zones.update()
         for i, sl in enumerate(self.slots):
             sl.zone_gain = gains[i]
@@ -1356,7 +1430,9 @@ class Rack:
         if self.routing == "personal":
             # The slots are templates now; the private copies are what plays.
             slots = []
-            mix += self.personal.process(self._pool)
+            # Private per-client models sit in the middle: they belong to a
+            # person in the room, not to a slot with a place in the picture.
+            sum_stereo(mix, self.personal.process(self._pool))
 
         def feed(sl):
             if sl.source == "all":
@@ -1382,7 +1458,12 @@ class Rack:
                     log.error("slot %d failed: %s", s.index + 1, exc)
                     continue
                 if s.solo if any_solo else s.enabled:
-                    mix += out
+                    gl, gr = s.pan_gains(out.shape[1])
+                    sum_stereo(mix, out, gl, gr)
+                else:
+                    # Keep the pan ramp following even while muted, so unmuting
+                    # does not jump the slot across the picture.
+                    s.pan_gains(out.shape[1])
 
         mix = self.master_reverb.process(mix)
         mix = mix * self.master_gain
@@ -1488,7 +1569,7 @@ class Rack:
         with self._out_q.mutex:
             self._out_q.queue.clear()
         for _ in range(self.prime):
-            self._out_q.put_nowait(np.zeros((self.n_ch, self.block), dtype=np.float32))
+            self._out_q.put_nowait(np.zeros((OUT_CH, self.block), dtype=np.float32))
 
         # Sixteen workers rather than four, so private per-client models run
         # side by side too; idle workers cost nothing.
