@@ -104,6 +104,26 @@ export class Registry {
     device.hz = device.interval > 0 ? 1000 / device.interval : 0;
   }
 
+  /**
+   * Re-zero one device: whatever it reads next becomes its resting position.
+   * The phone's "reset sensors" button and the dashboard's row button both
+   * land here. Returns false for a device the server does not know (yet).
+   */
+  resetZero(id: string): boolean {
+    const device = this.devices.get(id);
+    if (!device) return false;
+    device.conditioner.reset();
+    return true;
+  }
+
+  /** Same, addressed the way the dashboard sees devices. */
+  resetZeroBySlot(slot: number): boolean {
+    const device = this.bySlot.get(slot);
+    if (!device) return false;
+    device.conditioner.reset();
+    return true;
+  }
+
   /** Explicit leave (socket closed). */
   remove(id: string): void {
     const device = this.devices.get(id);

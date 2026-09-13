@@ -51,6 +51,8 @@ class OneEuro {
   private x: number | null = null;
   private dx = 0;
 
+  reset(): void { this.x = null; this.dx = 0; }
+
   filter(value: number, dt: number, minCutoff: number, beta: number): number {
     if (this.x === null) { this.x = value; return value; }
     const dxRaw = (value - this.x) / dt;
@@ -76,6 +78,22 @@ export class Conditioner {
   private idle = 0;
 
   constructor(private readonly params: ConditionParams) {}
+
+  /**
+   * Forget the resting position: the next sample becomes the new zero.
+   * The phone's "reset sensors" button ends here. Someone who has just
+   * changed their grip does not want to wait `baselineTau` for the baseline
+   * to slide over, and while they keep moving it never slides at all. The
+   * filters are cleared too, so the first sample after the reset is its own
+   * smoothed value and `rel` starts at exactly zero instead of jumping.
+   */
+  reset(): void {
+    for (const f of this.filters) f.reset();
+    this.base = null;
+    this.last = null;
+    this.activity = 0;
+    this.idle = 0;
+  }
 
   process(acc: [number, number, number], gyro: [number, number, number], dt: number): Conditioned {
     dt = Math.min(0.1, Math.max(0.001, dt));

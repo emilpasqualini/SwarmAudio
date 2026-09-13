@@ -98,6 +98,22 @@ export class Transport {
     });
   }
 
+  /**
+   * "Reset sensors": ask the server to take the phone's current position as
+   * the new neutral. Its own request on both transports — the socket carries
+   * binary frames only, and a tap now and then does not belong on the hot
+   * path. Resolves false when the server did not know this phone.
+   */
+  async resetZero(): Promise<boolean> {
+    try {
+      const res = await fetch(`/ingest/${this.id}?reset=1`, { method: 'POST', cache: 'no-store' });
+      return res.ok;
+    } catch (err) {
+      this.events.onLog(`reset failed: ${(err as Error).message}`);
+      return false;
+    }
+  }
+
   /** Tell the server we are leaving, then stop. */
   stop(): void {
     this.closed = true;

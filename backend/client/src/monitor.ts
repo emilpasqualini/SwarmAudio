@@ -15,10 +15,13 @@ import QRCode from 'qrcode';
 import { el, setSigned, signedBar, slotColour } from './dom';
 import { ActivityLog } from './log';
 import { Tones } from './tones';
+import { Sorter, SortableTable, SORT_LAST } from './table';
+import type { Column } from './table';
 import type { DeviceInfo, FeedMessage, MonitorHello, MonitorMessage, MonitorState, OscTarget, Settings } from '../../shared/types';
 import { CAM_MODES, SETTINGS_LIMITS, SPECIES, wifiQrText } from '../../shared/types';
 import type { CamMode, Species } from '../../shared/types';
 import { CAM_FIELDS, CAM_MESSAGES, EVENT_MESSAGES, GLOBAL_FIELDS, MIX_FIELDS, MUTABLE, OSC_SCHEMA_VERSION, SAMPLE_FIELDS, SWARM_FIELDS, typeTags } from '../../shared/osc-schema';
+import type { Field, MessageDoc } from '../../shared/osc-schema';
 
 const root = document.getElementById('app')!;
 const log = new ActivityLog(document.getElementById('log')!);
@@ -122,14 +125,42 @@ const refs = {
 let camUrl: string | null = null;
 
 // --- protocol card: rendered from shared/osc-schema.ts, the same source docs/OSC.md is generated from.
+
+/** A schema field carries its position in the message — sorting must not move it. */
+type NumberedField = Field & { n: number };
+
+const FIELD_COLUMNS: Column<NumberedField>[] = [
+  { label: '#', value: (f) => f.n },
+  { label: 'field', value: (f) => f.name },
+  { label: 'type', value: (f) => f.type },
+  { label: 'unit', value: (f) => f.unit },
+  { label: 'meaning', value: (f) => f.description },
+];
+
+const MESSAGE_COLUMNS: Column<MessageDoc>[] = [
+  { label: 'address', value: (m) => m.address },
+  { label: 'arguments', value: (m) => m.args },
+  { label: 'when', value: (m) => m.when },
+];
+
+function fieldRows(fields: Field[]): HTMLTableElement {
+  const table = new SortableTable<NumberedField>(FIELD_COLUMNS, (f) => el('tr', {},
+    el('td', { class: 'num', text: String(f.n) }), el('td', {}, el('code', { text: f.name })), el('td', { class: 'num', text: f.type }),
+    el('td', { text: f.unit || '—' }), el('td', { class: 'note', text: f.description }),
+  ), 'schema');
+  table.setRows(fields.map((f, i) => ({ ...f, n: i + 1 })));
+  return table.element;
+}
+
+function messageRows(messages: MessageDoc[]): HTMLTableElement {
+  const table = new SortableTable<MessageDoc>(MESSAGE_COLUMNS, (m) => el('tr', {},
+    el('td', {}, el('code', { text: m.address })), el('td', { class: 'note', text: m.args }), el('td', { class: 'note', text: m.when }),
+  ), 'schema');
+  table.setRows(messages);
+  return table.element;
+}
+
 function buildProtocolCard(): void {
-  const fieldRows = (fields: typeof SAMPLE_FIELDS) => el('table', { class: 'schema' },
-    el('thead', {}, el('tr', {}, el('th', { text: '#' }), el('th', { text: 'field' }), el('th', { text: 'type' }), el('th', { text: 'unit' }), el('th', { text: 'meaning' }))),
-    el('tbody', {}, ...fields.map((f, i) => el('tr', {},
-      el('td', { class: 'num', text: String(i + 1) }), el('td', {}, el('code', { text: f.name })), el('td', { class: 'num', text: f.type }),
-      el('td', { text: f.unit || '—' }), el('td', { class: 'note', text: f.description }),
-    ))),
-  );
   refs.protocolCard.replaceChildren(
     el('div', { class: 'row between wrap' },
       el('div', { class: 'section-label', text: `osc protocol · version ${OSC_SCHEMA_VERSION}` }),
@@ -151,11 +182,7 @@ function buildProtocolCard(): void {
     el('details', {},
       el('summary', { class: 'note', text: `/hive/cam — ${CAM_FIELDS.length} arguments per camera frame · ${typeTags(CAM_FIELDS)}` }),
       el('div', { class: 'table-wrap' }, fieldRows(CAM_FIELDS)),
-      el('div', { class: 'table-wrap' }, el('table', { class: 'schema' },
-        el('tbody', {}, ...CAM_MESSAGES.map((m) => el('tr', {},
-          el('td', {}, el('code', { text: m.address })), el('td', { class: 'note', text: m.args }), el('td', { class: 'note', text: m.when }),
-        ))),
-      )),
+      el('div', { class: 'table-wrap' }, messageRows(CAM_MESSAGES)),
     ),
     el('details', {},
       el('summary', { class: 'note', text: `/hive/mix — ${MIX_FIELDS.length} arguments at the swarm rate · ${typeTags(MIX_FIELDS)}` }),
@@ -163,11 +190,7 @@ function buildProtocolCard(): void {
     ),
     el('details', {},
       el('summary', { class: 'note', text: 'events: join · leave · roster · schema · ping · queen' }),
-      el('div', { class: 'table-wrap' }, el('table', { class: 'schema' },
-        el('tbody', {}, ...EVENT_MESSAGES.map((m) => el('tr', {},
-          el('td', {}, el('code', { text: m.address })), el('td', { class: 'note', text: m.args }), el('td', { class: 'note', text: m.when }),
-        ))),
-      )),
+      el('div', { class: 'table-wrap' }, messageRows(EVENT_MESSAGES)),
     ),
     el('details', {},
       el('summary', { class: 'note', text: 'receive it in Pd / Max / SuperCollider / Python' }),
@@ -504,13 +527,7 @@ function buildPage(): void {
     refs.protocolCard,
     el('div', { class: 'card' },
       el('div', { class: 'section-label', text: 'swarm' }),
-      el('div', { class: 'table-wrap' }, el('table', {},
-        el('thead', {}, el('tr', {},
-          el('th', { text: '#' }), el('th', { text: 'name' }), el('th', { text: 'uid' }), el('th', { text: 'platform' }), el('th', { text: 'link' }),
-          el('th', { text: 'hz' }), el('th', { text: 'rel x y z · turn x y z' }), el('th', { text: '|rel|' }), el('th', { text: '|turn|' }), el('th', { text: 'act' }), el('th'),
-        )),
-        refs.tbody,
-      )),
+      el('div', { class: 'table-wrap' }, el('table', {}, deviceSorter.thead, refs.tbody)),
     ),
     el('div', { class: 'credit', text: 'HIVE · Music & AI Hackathon 2026' }),
   ));
@@ -522,6 +539,27 @@ function buildPage(): void {
 // --------------------------------------------------------------------------- //
 
 const rows = new Map<number, { tr: HTMLTableRowElement; cells: HTMLElement[]; bars: HTMLElement[] }>();
+
+/** −1 for a device that has not sent a sample yet, so it sorts below the quiet ones. */
+const magnitude = (v: [number, number, number] | undefined): number => (v ? Math.hypot(...v) : -1);
+
+const DEVICE_COLUMNS: Column<DeviceInfo>[] = [
+  { label: '#', value: (d) => d.slot },
+  { label: 'name', value: (d) => d.name || SORT_LAST },
+  { label: 'uid', value: (d) => d.uid },
+  { label: 'platform', value: (d) => d.platform },
+  { label: 'link', value: (d) => d.transport },
+  { label: 'hz', value: (d) => d.hz, desc: true },
+  { label: 'rel x y z · turn x y z' },
+  { label: '|rel|', value: (d) => magnitude(d.last?.rel), desc: true },
+  { label: '|turn|', value: (d) => magnitude(d.last?.gyro), desc: true },
+  { label: 'act', value: (d) => d.last?.activity ?? -1, desc: true },
+  { label: '' },
+];
+
+// Sorting by a live column re-orders on every snapshot — that is the point:
+// sort by |rel| and whoever moves most stays at the top.
+const deviceSorter = new Sorter<DeviceInfo>(DEVICE_COLUMNS, () => { if (state) renderDevices(state.devices); }, 0);
 
 function updateState(): void {
   if (!state || !hello) return;
@@ -611,9 +649,11 @@ function renderDevices(devices: DeviceInfo[]): void {
         el('td', {}, (() => {
           const crown = el('button', { class: 'pill small quiet', text: '♛', title: 'make this the queen' });
           crown.onclick = () => { void patchSettings({ queenUid: state?.settings.queenUid === d.uid ? '' : d.uid }); };
+          const zero = el('button', { class: 'pill small quiet', text: '⌖', title: 'reset the neutral position of this phone' });
+          zero.onclick = () => { void api('POST', '/api/devices/reset', { slot: d.slot }).then((r) => { if (r.ok) log.step(`#${d.slot} re-zeroed`); }); };
           const kick = el('button', { class: 'pill small quiet', text: '×', title: 'drop this device' });
           kick.onclick = () => { void api('POST', '/api/devices/kick', { slot: d.slot }); };
-          return el('span', { class: 'row' }, crown, kick);
+          return el('span', { class: 'row' }, crown, zero, kick);
         })()),
       ];
       const tr = el('tr', {}, ...cells);
@@ -640,8 +680,9 @@ function renderDevices(devices: DeviceInfo[]): void {
     }
   }
   for (const [slot, row] of rows) if (!seen.has(slot)) { row.tr.remove(); rows.delete(slot); }
-  // Keep slot order without rebuilding: append in order is a no-op when already sorted.
-  for (const d of devices) refs.tbody.append(rows.get(d.slot)!.tr);
+  // Order without rebuilding: appending a row that already sits in that place
+  // is a no-op, so an unchanged order costs nothing.
+  for (const d of deviceSorter.sort(devices)) refs.tbody.append(rows.get(d.slot)!.tr);
 }
 
 // --------------------------------------------------------------------------- //
