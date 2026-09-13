@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 import socket
 import threading
 import time
@@ -118,6 +119,84 @@ class SwitchRow:
 
     def destroy(self):
         self.widget.destroy()
+
+
+_LEADING_NUMBER = re.compile(r"^\s*[-+]?(?:\d+\.?\d*|\.\d+)")
+
+
+def _cell_key(text: str):
+    """Sort key for one cell.
+
+    Every cell in these tables is a display string, and most of the interesting
+    columns are numbers wearing a unit -- "12", "440 Hz", "-6.0 dB", "0.55".
+    Sorting those as text puts 100 before 20, so a leading number is read as one
+    and everything else falls back to case-insensitive text, after the numbers.
+    """
+    m = _LEADING_NUMBER.match(text)
+    if m:
+        return (0, float(m.group(0)), "")
+    return (1, 0.0, text.casefold())
+
+
+class TreeSorter:
+    """Click a column heading to sort a Treeview by it; click again to reverse.
+
+    Rows are moved rather than rebuilt, so the tables that refill themselves ten
+    times a second keep working: call `apply()` after a refill and the chosen
+    order comes back. An order that is already right costs nothing, which is
+    what makes it safe to call from the refresh loop. Nested rows are sorted
+    within their own parent, so the grouped trees stay grouped.
+    """
+
+    ARROWS = {1: "  ↑", -1: "  ↓"}
+
+    def __init__(self, tree, columns, initial=None, descending=()):
+        """`columns` is (column id, heading text) pairs; "#0" is the tree column.
+
+        Columns named in `descending` start with the largest first, which is
+        what you want from "how loud" and "how recently".
+        """
+        self.tree = tree
+        self.labels = dict(columns)
+        self.descending = set(descending)
+        self.column = initial
+        self.dir = -1 if initial in self.descending else 1
+        for col, _ in columns:
+            tree.heading(col, command=lambda c=col: self._click(c))
+        self._paint()
+
+    def _click(self, col):
+        if self.column == col:
+            self.dir = -self.dir
+        else:
+            self.column = col
+            self.dir = -1 if col in self.descending else 1
+        self._paint()
+        self.apply()
+
+    def _paint(self):
+        for col, label in self.labels.items():
+            self.tree.heading(
+                col, text=label + (self.ARROWS[self.dir] if col == self.column else ""))
+
+    def _key(self, iid):
+        text = (self.tree.item(iid, "text") if self.column == "#0"
+                else self.tree.set(iid, self.column))
+        return _cell_key(str(text))
+
+    def apply(self):
+        if self.column is not None:
+            self._sort_children("")
+
+    def _sort_children(self, parent):
+        kids = list(self.tree.get_children(parent))
+        for iid in kids:
+            self._sort_children(iid)
+        ordered = sorted(kids, key=self._key, reverse=self.dir < 0)
+        if ordered == kids:
+            return
+        for i, iid in enumerate(ordered):
+            self.tree.move(iid, parent, i)
 
 
 class LoadGraph:
@@ -845,6 +924,31 @@ class App:
         self.master_rows = [ParamRow(bottom, self.reg["master.level"], width=240)]
         self.master_meter = ttk.Progressbar(bottom, maximum=100.0, length=200)
         self.master_meter.pack(side="left", padx=8)
+        # Four models on top of each other in the middle is a mush; giving each
+        # its own place is the cheapest way to hear them apart. Both buttons are
+        # only starting points -- the pans are ordinary knobs and OSC can drive
+        # them like anything else.
+        ttk.Button(bottom, text="spread", width=8,
+                   command=self._spread_pans).pack(side="left")
+        ttk.Button(bottom, text="centre", width=8,
+                   command=lambda: self._set_pans([0.0] * N_SLOTS)).pack(side="left",
+                                                                        padx=3)
+        ttk.Label(bottom, text="place the slots across the picture",
+                  foreground="#666").pack(side="left", padx=(6, 0))
+
+    # Even spacing that leaves nothing hard against a speaker, so a slot sweeping
+    # past the middle still has somewhere to go.
+    SPREAD = (-0.7, -0.25, 0.25, 0.7)
+
+    def _spread_pans(self):
+        self._set_pans(self.SPREAD[:N_SLOTS])
+
+    def _set_pans(self, positions):
+        for i, p in enumerate(positions):
+            self.reg[f"slot{i + 1}.pan"].set(p)
+        for ui in self.slot_ui:
+            for r in ui["rows"]:
+                r.refresh()
 
     def _build_slot(self, body, i):
         n = i + 1
@@ -894,6 +998,9 @@ class App:
 
         rows = [ParamRow(frame, self.reg[f"slot{n}.level"], width=110, label_width=16),
                 ParamRow(frame, self.reg[f"slot{n}.mix"], width=110, label_width=16),
+                # Where the slot sits between the speakers. Constant power, so
+                # sweeping it from OSC does not change how loud the model is.
+                ParamRow(frame, self.reg[f"slot{n}.pan"], width=110, label_width=16),
                 # The input repitch, surfaced from the pre-chain: moving the
                 # source into a model's register is the knob that decides
                 # whether a model answers at all, so it lives here too.
@@ -1219,6 +1326,12 @@ class App:
             self.voice_tree.column(col, width=width, anchor=anchor)
         self.voice_tree.column("#0", width=90)
         self.voice_tree.pack(fill="both", expand=True)
+        self.voice_sort = TreeSorter(
+            self.voice_tree,
+            (("#0", "voice"), ("who", "who"), ("platform", "phone"),
+             ("level", "level"), ("pitch", "pitch"), ("rough", "rough"),
+             ("bus", "into"), ("model", "own model")),
+            descending=("level", "pitch", "rough"))
         self.voice_tree.tag_configure("queen", background="#fff3c4")
         self.voice_tree.tag_configure("leaving", foreground="#999")
 
@@ -1390,6 +1503,8 @@ class App:
         self.seen_tree.column("#0", width=215)
         self.seen_tree.column("last", width=185)
         self.seen_tree.pack(fill="both", expand=True)
+        self.seen_sort = TreeSorter(
+            self.seen_tree, (("#0", "swarm / client"), ("last", "values")))
         self.seen_tree.bind("<<TreeviewSelect>>", self._pick_seen)
         self._seen_groups = set()
 
@@ -1409,6 +1524,11 @@ class App:
         self.map_tree.column("range", width=135)
         self.map_tree.column("value", width=55, anchor="e")
         self.map_tree.pack(fill="both", expand=True)
+        self.map_sort = TreeSorter(
+            self.map_tree,
+            (("#0", "from"), ("arg", "arg"), ("target", "controls"),
+             ("range", "in -> out"), ("value", "now")),
+            descending=("value",))
         self.map_tree.bind("<<TreeviewSelect>>", self._pick_mapping)
         # Several at once: ctrl- or shift-click, or a group header for every
         # route in it; Delete removes, ctrl+A selects them all.
@@ -1770,6 +1890,7 @@ class App:
                 self._map_iids[iid] = m
                 self._map_rows[iid] = row
                 self.map_tree.insert(node, "end", iid=iid, text=m.address, values=row)
+        self.map_sort.apply()
         still = [i for i in keep if self.map_tree.exists(i)]
         if still:
             self.map_tree.selection_set(still)
@@ -1837,6 +1958,11 @@ class App:
             self.lib_tree.heading(col, text=text)
             self.lib_tree.column(col, width=width, anchor=anchor)
         self.lib_tree.pack(fill="both", expand=True)
+        self.lib_sort = TreeSorter(
+            self.lib_tree,
+            (("#0", "model"), ("size", "MB"), ("io", "i/o"), ("have", "local"),
+             ("desc", "what it is")),
+            descending=("size",))
         self.lib_tree.bind("<Control-a>", lambda e: (
             self.lib_tree.selection_set(self.lib_tree.get_children()), "break")[1])
         self._refill_library()
@@ -1849,6 +1975,7 @@ class App:
                                          "mono" if e.mono else "stereo",
                                          "yes" if self.library.have(e) else "",
                                          e.description[:110]))
+        self.lib_sort.apply()
         have = len(self.library.downloaded())
         self.lib_status.set(f"{len(self.library.entries)} models, {have} downloaded")
 
@@ -2154,6 +2281,9 @@ class App:
             else:
                 self.voice_tree.insert("", "end", iid=iid, text=text,
                                        values=values, tags=tags)
+        # New rows land at the end and levels move constantly, so the chosen
+        # order is re-applied here; an order already right does no work.
+        self.voice_sort.apply()
 
     def _show_send_list(self):
         from morpho_rack import format_send_list
@@ -2186,6 +2316,7 @@ class App:
             self.m_arg.set(str(arg))
             self.learn_btn.config(text="learn")
 
+        added = False
         for address in sorted(self.osc.seen):
             group = oscmap.group_label(address)
             node = f"group:{group}"
@@ -2193,6 +2324,7 @@ class App:
                 self.seen_tree.insert("", "end", iid=node, text=group, open=True)
                 self._seen_groups.add(group)
                 self._refill_source_groups()
+                added = True
             count, values, _ = self.osc.seen[address]
             shown = "  ".join(f"{v:.2f}" if isinstance(v, float) else str(v)
                               for v in values[:4])
@@ -2201,6 +2333,9 @@ class App:
             else:
                 self.seen_tree.insert(node, "end", iid=address, text=address,
                                       values=(shown,))
+                added = True
+        if added:
+            self.seen_sort.apply()
 
         if len(self._map_iids) != len(self.osc.mappings) or any(
                 self._map_iid(m) not in self._map_iids for m in self.osc.mappings):
@@ -2214,6 +2349,13 @@ class App:
                 if self._map_rows.get(iid) != row:
                     self._map_rows[iid] = row
                     self.map_tree.item(iid, values=row)
+
+        # Sorting by a live column means the order follows the numbers. Both
+        # trees are re-sorted twice a second rather than ten times: seventy
+        # routes reordered under the mouse is what made this list lag before.
+        if self._tick % 5 == 0:
+            self.map_sort.apply()
+            self.seen_sort.apply()
 
     def _on_close(self):
         if self._pending_after is not None:
