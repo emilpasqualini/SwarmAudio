@@ -121,7 +121,8 @@ class Voice:
     """One client's tone."""
 
     __slots__ = ("index", "sr", "pitch", "rough", "level", "peak", "touched",
-                 "_pitch", "_level", "_rough", "_ph", "_pm")
+                 "uid", "name", "platform", "connected", "joined",
+                 "queen_w", "_pitch", "_level", "_rough", "_ph", "_pm")
 
     def __init__(self, index: int, sr: int) -> None:
         self.index = index
@@ -131,11 +132,36 @@ class Voice:
         self.level = 0.0
         self.peak = 0.0
         self.touched = 0.0  # when OSC last wrote the level
+        # Who this voice belongs to. Voice N is whoever holds slot N, and a
+        # different uid arriving in that slot gets a fresh voice rather than
+        # inheriting the last person's pitch and loudness.
+        self.uid = ""
+        self.name = ""
+        self.platform = ""
+        self.connected = False
+        self.joined = 0.0
+        # How much of this voice goes to the queen bus in split routing,
+        # ramped so a change of crown crossfades instead of clicking.
+        self.queen_w = 0.0
         self._pitch = 220.0
         self._level = 0.0
         self._rough = 0.0
         self._ph = 0.0
         self._pm = 0.0
+
+    @property
+    def slot(self) -> int:
+        return self.index + 1
+
+    def clear(self) -> None:
+        """Forget the person, so the next one in this slot starts clean."""
+        self.uid = self.name = self.platform = ""
+        self.connected = False
+        self.level = 0.0
+        self.rough = 0.0
+        self.touched = 0.0
+        self.queen_w = 0.0
+        self.reset()
 
     @property
     def active(self) -> bool:
@@ -183,21 +209,83 @@ class Voice:
         return sig.astype(np.float32)
 
 
-class Synth:
-    """The bank of voices, one per client."""
+class BusLeveller:
+    """Slow automatic gain for one synth bus.
 
-    def __init__(self, sr: int, n_ch: int, n_voices: int = 8) -> None:
+    In split routing one person's voice feeds one model and everyone else's
+    feeds another. A single sine against a sum of seven would otherwise be
+    about 17 dB quieter, and the game -- which model is the queen? -- would be
+    decided by loudness instead of by listening. Both buses are pulled toward
+    the same RMS over a second or two, and below a gate the gain holds, so a
+    still queen is not boosted into audible noise.
+    """
+
+    def __init__(self, sr: int, target_db: float = -18.0, max_gain_db: float = 18.0,
+                 min_gain_db: float = -12.0, time_s: float = 1.5,
+                 gate_db: float = -55.0) -> None:
+        self.sr = sr
+        self.target_db = target_db
+        self.max_gain_db = max_gain_db
+        self.min_gain_db = min_gain_db
+        self.time_s = time_s
+        self.gate_db = gate_db
+        self.gain_db = 0.0
+        self.level_db = -120.0
+
+    def reset(self) -> None:
+        self.gain_db = 0.0
+
+    def process(self, x: np.ndarray) -> np.ndarray:
+        n = x.shape[-1]
+        if n == 0:
+            return x
+        rms = float(np.sqrt(np.mean(x.astype(np.float64) ** 2)))
+        self.level_db = 20.0 * np.log10(max(rms, 1e-9))
+        if self.level_db > self.gate_db:
+            want = min(max(self.target_db - self.level_db, self.min_gain_db),
+                       self.max_gain_db)
+        else:
+            want = self.gain_db
+        k = 1.0 - np.exp(-(n / self.sr) / max(self.time_s, 1e-3))
+        start = self.gain_db
+        self.gain_db = start + (want - start) * k
+        ramp = np.linspace(10.0 ** (start / 20.0), 10.0 ** (self.gain_db / 20.0), n,
+                           dtype=np.float32)
+        return (x * ramp).astype(np.float32, copy=False)
+
+
+class Synth:
+    """The bank of voices, one per connected client.
+
+    Voice N belongs to whoever holds slot N on the backend. That is the only
+    mapping the per-client OSC addresses allow (they are addressed by slot),
+    so it is also the one that stays intuitive: client 3 on the dashboard is
+    voice 3 here. Identity is still tracked by uid underneath, from /hive/join,
+    /hive/leave and the once-a-second /hive/roster, so a slot handed to a new
+    person gets a fresh voice, and the queen is found by uid rather than by a
+    slot number that might have moved.
+    """
+
+    ROSTER_GRACE_S = 2.5  # how long a client may be missing from the roster
+
+    def __init__(self, sr: int, n_ch: int, n_voices: int = MAX_VOICES) -> None:
         self.sr = sr
         self.n_ch = n_ch
         self.n_voices = max(1, min(int(n_voices), MAX_VOICES))
         self.voices = [Voice(i, sr) for i in range(self.n_voices)]
         self.values = {p.name: p.default for p in SYNTH_PARAMS}
         self.peak = 0.0
-        # Who wears the crown. Slot numbers are 1-based on the wire; -1 is
-        # nobody. The uid is kept only so the GUI can show which person it is.
         self.queen_slot = 0
         self.queen_uid = ""
         self.clips = 0
+        # Split routing: when on, level-changing queen modes are bypassed so the
+        # two buses stay comparable; see BusLeveller.
+        self.split = False
+        self.roster_at = 0.0
+        # Each voice's own signal from the last render, before any bus mixing:
+        # voice index -> (signal, queen weight at block start, at block end).
+        # The personal routing feeds these to one model per client.
+        self.last_voice_sigs = {}
 
     def param(self, name: str) -> Param:
         for p in SYNTH_PARAMS:
@@ -212,10 +300,73 @@ class Synth:
         p = self.param(name)
         self.values[name] = min(max(float(value), p.lo), p.hi)
 
+    # -- who is here --------------------------------------------------------
+
+    def _voice_for_slot(self, slot: int):
+        i = int(slot) - 1
+        return self.voices[i] if 0 <= i < self.n_voices else None
+
     def touch(self, index: int) -> None:
-        """Note that OSC just wrote to this voice, for the idle timeout."""
+        """OSC just wrote to this voice. Data arriving is itself proof that a
+        client holds the slot, so a voice lights up even before the roster
+        names who it is."""
         if 0 <= index < self.n_voices:
-            self.voices[index].touched = time.monotonic()
+            v = self.voices[index]
+            v.touched = time.monotonic()
+            if not v.connected:
+                v.connected = True
+                v.joined = v.touched
+
+    def join(self, slot: int, uid: str = "", name: str = "", platform: str = "") -> None:
+        v = self._voice_for_slot(slot)
+        if v is None:
+            return
+        uid = uid or ""
+        if uid and v.uid and v.uid != uid:
+            # A different person took this slot: start them from silence.
+            v.clear()
+        now = time.monotonic()
+        if not v.connected:
+            v.joined = now
+        v.connected = True
+        if uid:
+            v.uid = uid
+        if name:
+            v.name = name
+        if platform:
+            v.platform = platform
+        v.touched = max(v.touched, now)
+
+    def leave(self, slot: int, uid: str = "") -> None:
+        v = self._voice_for_slot(slot)
+        if v is None:
+            return
+        if uid and v.uid and v.uid != uid:
+            return  # a stale leave for someone who already gave the slot up
+        if self.queen_index == v.index and self.queen_floor() > 0.0:
+            return  # the drone queen is meant to hang on
+        v.connected = False
+        v.level = 0.0
+
+    def roster(self, entries) -> None:
+        """Reconcile with the backend's full list of who is present."""
+        now = time.monotonic()
+        self.roster_at = now
+        present = set()
+        for slot, uid, name in entries:
+            present.add(int(slot))
+            self.join(int(slot), uid, name)
+        for v in self.voices:
+            if v.connected and v.slot not in present and v.uid:
+                # Named by an earlier roster and missing from this one.
+                if now - v.touched > self.ROSTER_GRACE_S:
+                    self.leave(v.slot, v.uid)
+
+    def connected(self):
+        return [v for v in self.voices if v.connected or v._level > 1e-4]
+
+    def connected_count(self) -> int:
+        return sum(1 for v in self.voices if v.connected)
 
     def scale(self):
         idx = int(round(self.values["scale"]))
@@ -238,11 +389,23 @@ class Synth:
         """Called when /hive/queen says the crown has moved."""
         self.queen_uid = uid or ""
         self.queen_slot = int(slot or 0)
+        # Only name an anonymous voice after her if nobody already carries her
+        # uid; otherwise a slot number that has gone stale would give two
+        # voices the same identity and the wrong one could wear the crown.
+        if self.queen_uid and self.queen_slot and not any(
+                v.uid == self.queen_uid for v in self.voices):
+            v = self._voice_for_slot(self.queen_slot)
+            if v is not None and not v.uid:
+                v.uid = self.queen_uid
 
     @property
     def queen_index(self) -> int:
-        """Voice index of the queen, or -1 when there is no queen or her slot
-        is past the end of the bank."""
+        """Voice index of the queen, or -1. Found by uid first, because a slot
+        number can be reassigned between one /hive/queen and the next."""
+        if self.queen_uid:
+            for v in self.voices:
+                if v.uid == self.queen_uid:
+                    return v.index
         i = self.queen_slot - 1
         return i if 0 <= i < self.n_voices else -1
 
@@ -262,8 +425,9 @@ class Synth:
         queen is imposing on it.
 
         Returns (gains, pitches, root_override, immortal), where `immortal` is
-        the voice that must not time out. Doing it once per block rather than
-        per voice keeps the rules in one readable place.
+        the voice that must not time out. In split routing the modes that
+        change loudness are bypassed: there the queen is meant to be found by
+        timbre, and a louder queen would give the answer away.
         """
         n = self.n_voices
         gains = [1.0] * n
@@ -278,16 +442,19 @@ class Synth:
             return gains, pitches, root_override, immortal
 
         queen = self.voices[qi]
+        loud_modes = ("loudest", "duck", "solo")
+        if self.split and mode in loud_modes:
+            return gains, pitches, root_override, immortal
+
         if mode == "loudest":
             # She stands out mostly by everyone else dropping, because boosting
             # her past unity only eats headroom: at full amount the gap is
-            # already about 26 dB.
+            # already about 23 dB.
             gains[qi] = 1.0 + 0.35 * amount
             for i in range(n):
                 if i != qi:
                     gains[i] = 1.0 - 0.9 * amount
         elif mode == "duck":
-            # The hole only opens while she is actually moving.
             duck = 1.0 - 0.9 * amount * min(max(queen.level, 0.0), 1.0)
             for i in range(n):
                 if i != qi:
@@ -297,29 +464,25 @@ class Synth:
                 if i != qi:
                     gains[i] = 1.0 - amount
         elif mode == "tuning":
-            # She sets the key without getting louder.
             root_override = hz_to_midi(max(queen.pitch, 20.0)) % 12.0 + 36.0
         elif mode == "harmony":
             base = max(queen.pitch, 20.0)
             for i in range(n):
                 if i == qi:
                     continue
-                ratio = HARMONY_RATIOS[i % len(HARMONY_RATIOS)]
-                want = base * ratio
-                # At amount 1 the crowd is entirely her chord; below that they
-                # are pulled toward it in cents rather than snapped.
+                want = base * HARMONY_RATIOS[i % len(HARMONY_RATIOS)]
                 pitches[i] = float(
                     self.voices[i].pitch * (want / max(self.voices[i].pitch, 1e-6))
                     ** amount)
         elif mode == "drone":
             pitches[qi] = max(queen.pitch, 20.0) * 0.5
-            gains[qi] = 1.0 + 0.25 * amount
+            if not self.split:
+                gains[qi] = 1.0 + 0.25 * amount
             immortal = qi
         return gains, pitches, root_override, immortal
 
     def queen_floor(self) -> float:
-        """The level the queen is held at in drone mode, so she never drops
-        out even when the person holding the crown stands still."""
+        """The level the queen is held at in drone mode."""
         if self.queen_mode_name() != "drone" or self.queen_index < 0:
             return 0.0
         return 0.2 + 0.35 * float(self.values["queen_amount"])
@@ -332,8 +495,16 @@ class Synth:
     def active_count(self) -> int:
         return sum(1 for v in self.voices if v.active)
 
-    def render(self, n: int) -> np.ndarray:
-        """One block of the whole bank, shaped (channels, samples)."""
+    # -- rendering ----------------------------------------------------------
+
+    def render_buses(self, n: int):
+        """One block as three mono buses: everyone, the queen, everyone else.
+
+        Each voice is rendered once and split between the queen and crowd buses
+        by a weight that ramps over a third of a second, so when the crown
+        moves the old queen's voice slides into the crowd and the new one's
+        slides out, instead of jumping.
+        """
         scale = self.scale()
         glide = self.values["glide"]
         detune = self.values["spread"]
@@ -346,29 +517,61 @@ class Synth:
         if floor > 0.0 and immortal >= 0:
             self.voices[immortal].level = max(self.voices[immortal].level, floor)
 
-        mono = np.zeros(n, dtype=np.float32)
+        qi = self.queen_index
+        swing = min(1.0, (n / self.sr) / 0.33)
+
+        full = np.zeros(n, dtype=np.float32)
+        queen = np.zeros(n, dtype=np.float32)
+        crowd = np.zeros(n, dtype=np.float32)
+        audible, crowd_audible = 0, 0
+        voice_sigs = {}
         for i, v in enumerate(self.voices):
-            # A client that left stops sending, so its last activity would
-            # otherwise stick and leave the voice droning forever. The drone
-            # queen is the deliberate exception.
             stale = (v.touched > 0.0 and (now - v.touched) > timeout
                      and i != immortal)
+            if stale and v.connected and self.roster_at <= 0.0:
+                # No roster to consult, so silence for `timeout` is the only
+                # evidence the phone has gone.
+                v.connected = False
+            target_w = 1.0 if i == qi else 0.0
+            w0 = v.queen_w
+            v.queen_w = w0 + max(-swing, min(swing, target_w - w0))
             if not v.active and (v.level <= 1e-4 or stale):
                 v.peak = 0.0
                 if v._level <= 1e-4:
+                    if not v.connected and v.uid and v._level <= 1e-4:
+                        v.clear()
                     continue
-            mono += v.render(n, root, scale, glide, detune, silent=stale,
-                             gain=gains[i], pitch_override=pitches[i])
+            sig = v.render(n, root, scale, glide, detune, silent=stale or not v.connected,
+                           gain=gains[i], pitch_override=pitches[i])
+            voice_sigs[i] = (sig, w0, v.queen_w)
+            full += sig
+            if w0 == 0.0 and v.queen_w == 0.0:
+                crowd += sig
+                crowd_audible += 1
+            elif w0 == 1.0 and v.queen_w == 1.0:
+                queen += sig
+            else:
+                w = np.linspace(w0, v.queen_w, n, dtype=np.float32)
+                queen += sig * w
+                crowd += sig * (1.0 - w)
+                crowd_audible += 1
+            audible += 1
 
-        # Voices sum, so keep the bank at a sane level however many arrive.
-        gain = 10.0 ** (self.values["level"] / 20.0)
-        mono *= gain / max(1.0, np.sqrt(max(self.active_count(), 1)))
-        # A backstop, not the working mechanism: the queen rules and a loud
-        # bank can together ask for more than full scale, and this feeds a
-        # compressor that would rather not be handed something out of range.
-        self.peak = float(np.abs(mono).max()) if n else 0.0
-        if self.peak > 1.0:
-            self.clips += 1
-            np.clip(mono, -1.0, 1.0, out=mono)
-            self.peak = 1.0
-        return np.repeat(mono[None, :], self.n_ch, axis=0)
+        g = 10.0 ** (self.values["level"] / 20.0)
+        full *= g / max(1.0, np.sqrt(max(audible, 1)))
+        crowd *= g / max(1.0, np.sqrt(max(crowd_audible, 1)))
+        queen *= g
+
+        self.peak = float(np.abs(full).max()) if n else 0.0
+        for bus in (full, queen, crowd):
+            if n and float(np.abs(bus).max()) > 1.0:
+                self.clips += 1
+                np.clip(bus, -1.0, 1.0, out=bus)
+        self.peak = min(self.peak, 1.0)
+        self.last_voice_sigs = voice_sigs
+        return full, queen, crowd
+
+    def render(self, n: int) -> np.ndarray:
+        """One block of the whole bank, shaped (channels, samples)."""
+        full, _, _ = self.render_buses(n)
+        return np.repeat(full[None, :], self.n_ch, axis=0)

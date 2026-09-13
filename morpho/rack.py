@@ -15,6 +15,7 @@ it shows up in both without either of them knowing about it.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -28,8 +29,12 @@ from typing import Optional
 
 import numpy as np
 
+import devices as devices_mod
 import dsp
+import personal as personal_mod
+import runner as runner_mod
 import synth as synth_mod
+import zones as zones_mod
 
 log = logging.getLogger("morpho_rack")
 
@@ -94,8 +99,8 @@ class CpuMeter:
         self._cpu = time.process_time()
         self._wall = time.perf_counter()
         self.cores = max(1, os.cpu_count() or 1)
-        self.percent = 0.0       # of one core
-        self.machine = 0.0       # of every core
+        self.percent = 0.0  # of one core
+        self.machine = 0.0  # of every core
 
     def sample(self) -> float:
         cpu, wall = time.process_time(), time.perf_counter()
@@ -105,6 +110,71 @@ class CpuMeter:
             self.percent = 100.0 * dc / dw
             self.machine = self.percent / self.cores
         return self.machine
+
+
+def prefer_performance() -> list:
+    """Ask the OS not to treat the rack as a background job.
+
+    On a laptop with performance and efficiency cores, Windows 11 moves a
+    process whose window is not in focus onto the efficiency cores and caps its
+    power ("EcoQoS"). The same four models measured between 41% and over 200%
+    of the block budget on this machine depending on exactly that, plus heat.
+    Opting out of power throttling and raising the priority class is what DAWs
+    do; it cannot make the cores faster, but it stops the scheduler handing the
+    audio work to the slow ones. Returns what was changed, for the log.
+    """
+    done = []
+    if os.name != "nt":
+        try:
+            os.nice(-5)
+            done.append("nice -5")
+        except (OSError, AttributeError):
+            pass
+        return done
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Without explicit types ctypes passes the handle as a 32-bit int, the
+        # upper half of the 64-bit pseudo-handle is lost, and every call fails
+        # quietly with "invalid handle".
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.SetPriorityClass.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel32.SetPriorityClass.restype = wintypes.BOOL
+        kernel32.SetProcessInformation.argtypes = (
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        )
+        kernel32.SetProcessInformation.restype = wintypes.BOOL
+        proc = kernel32.GetCurrentProcess()
+        HIGH_PRIORITY_CLASS = 0x80
+        if kernel32.SetPriorityClass(proc, HIGH_PRIORITY_CLASS):
+            done.append("high priority")
+
+        class PowerThrottling(ctypes.Structure):
+            _fields_ = [
+                ("Version", wintypes.ULONG),
+                ("ControlMask", wintypes.ULONG),
+                ("StateMask", wintypes.ULONG),
+            ]
+
+        ProcessPowerThrottling = 4
+        EXECUTION_SPEED = 0x1
+        state = PowerThrottling(1, EXECUTION_SPEED, 0)  # control speed, never throttle
+        ok = kernel32.SetProcessInformation(
+            proc, ProcessPowerThrottling, ctypes.byref(state), ctypes.sizeof(state)
+        )
+        if ok:
+            done.append("no EcoQoS")
+        winmm = ctypes.WinDLL("winmm")
+        if winmm.timeBeginPeriod(1) == 0:
+            done.append("1 ms timer")
+    except Exception as exc:
+        log.debug("could not raise process priority: %s", exc)
+    return done
 
 
 def db_to_gain(db: float) -> float:
@@ -182,10 +252,60 @@ LEVEL = dsp.Param("level", "level", -40.0, 12.0, 0.0, "dB")
 MIX = dsp.Param("mix", "dry/wet", 0.0, 1.0, 1.0, "")
 SWITCH = dsp.Param("switch", "on", 0.0, 1.0, 1.0, "")
 
+# What a slot listens to. "all" is the input mixer (mic, synth, file, test);
+# "queen" and "crowd" are the two halves of the synth in split routing.
+SOURCES = ("all", "queen", "crowd", "off")
+SOURCE = dsp.Param("source", "input", 0.0, len(SOURCES) - 1.0, 0.0, "")
+
 
 # ---------------------------------------------------------------------------
 # slot
 # ---------------------------------------------------------------------------
+
+
+def _short_reason(exc) -> str:
+    """The last line of a TorchScript error, which is the one that says why."""
+    lines = [ln.strip() for ln in str(exc).splitlines() if ln.strip()]
+    return lines[-1] if lines else type(exc).__name__
+
+
+class SqwEngine:
+    """The SDK's own wrapper, on the CPU. Proven, and the fallback for any model
+    the GPU runner cannot take."""
+
+    kind = "cpu"
+
+    def __init__(self, model, sr: int, block: int, rows: int) -> None:
+        self.m = model
+        self.sr = sr
+        self.rows = rows
+        self.set_block(block)
+
+    def set_block(self, block: int) -> None:
+        import torch
+
+        self.block = int(block)
+        self.m.set_daw_sample_rate_and_buffer_size(self.sr, self.block)
+        self.m.reset()
+        self._params = torch.zeros((self.rows, self.block), dtype=torch.float32)
+
+    @property
+    def latency(self) -> int:
+        return int(
+            self.m.calc_buffering_delay_samples() + self.m.calc_model_delay_samples()
+        )
+
+    def reset(self) -> None:
+        self.m.reset()
+
+    def forward(self, x: np.ndarray, params: np.ndarray) -> np.ndarray:
+        import torch
+
+        with torch.no_grad():
+            self._params.copy_(torch.from_numpy(params).unsqueeze(1))
+            # Copy: the wrapper writes into its input buffer.
+            xt = torch.from_numpy(np.ascontiguousarray(x).copy())
+            return self.m.forward(xt, self._params).numpy().copy()
 
 
 class Slot:
@@ -195,18 +315,24 @@ class Slot:
         self.block = block
         self.n_ch = n_ch
 
-        self.model = None
+        self.model = None  # the engine; None means nothing loaded
         self.metadata: dict = {}
         self.path: Optional[Path] = None
         self.name = "empty"
         self.status = "empty"
         self.params: list[ParamSpec] = []
+        self.device = "-"
+        self.input_mono = True
 
         self.enabled = True
         self.solo = False
         self.mix = 1.0
         self.gain = 1.0
         self.param_slew = 0.25
+        self.source = "all"
+        # Set by the camera sections every block; ramped inside process().
+        self.zone_gain = 1.0
+        self._zone_g = 1.0
 
         self.peak = 0.0
         self.latency = 0
@@ -216,63 +342,105 @@ class Slot:
 
         self.param_targets = np.zeros(0, dtype=np.float32)
         self.param_smoothed = np.zeros(0, dtype=np.float32)
-        self._params_buf = None
         self._dry_delay = DelayLine(n_ch)
         self._align_delay = DelayLine(n_ch)
 
     # -- loading ------------------------------------------------------------
 
-    def load(self, path: Path, validate: bool = False) -> None:
-        """Load a .nm model. Takes seconds; never call it from the audio path."""
+    def load(
+        self,
+        path: Path,
+        validate: bool = False,
+        device: str = "cpu",
+        data: Optional[bytes] = None,
+    ) -> None:
+        """Load a .nm model onto `device`. Takes seconds; never from the audio path.
+
+        The metadata, defaults and dry/wet always come from the SDK wrapper on
+        the CPU. On a GPU the network is then reloaded onto the device and
+        driven directly (runner.py); if that fails for any reason the wrapper is
+        kept and the slot says so, rather than the load failing.
+        """
         import torch
 
         path = Path(path)
         if validate:
-            # The SDK's loader also sends an HTTP HEAD to every link in the
-            # metadata, with no timeout. Behind a captive portal that hangs for
-            # minutes, so it is opt-in.
             from neutone_sdk.utils import load_neutone_model
 
             model, metadata = load_neutone_model(str(path))
         else:
             extra = {"metadata.json": ""}
-            model = torch.jit.load(str(path), _extra_files=extra)
+            # `data` is the file already in memory, which is how the personal
+            # layer loads many copies of one model without rereading it.
+            source = io.BytesIO(data) if data is not None else str(path)
+            model = torch.jit.load(source, _extra_files=extra)
             metadata = _read_metadata(model, extra)
 
         if hasattr(model, "prepare_for_inference"):
             model.prepare_for_inference()
-        model.set_daw_sample_rate_and_buffer_size(self.sr, self.block)
-        model.reset()
 
         defaults = (
             model.get_default_param_values()
-            .detach().reshape(-1).to(torch.float32).numpy().copy()
+            .detach()
+            .reshape(-1)
+            .to(torch.float32)
+            .numpy()
+            .copy()
         )
+        params = _read_param_specs(metadata)
+        targets = defaults.copy()
+        for spec in params:  # metadata defaults win over the tensor's
+            if spec.row < targets.shape[0]:
+                targets[spec.row] = spec.default
+        try:
+            mix = float(model.get_wet_default_value())
+        except Exception:
+            mix = 1.0
+        input_mono = bool(model.is_input_mono())
+
+        engine, label = None, "cpu"
+        if str(device).startswith("cuda"):
+            try:
+                engine = runner_mod.load_direct(
+                    path,
+                    self.sr,
+                    self.block,
+                    self.n_ch,
+                    device,
+                    targets.shape[0],
+                    targets,
+                )
+                engine.kind = "gpu"
+                label = "gpu"
+            except Exception as exc:
+                reason = _short_reason(exc)
+                label = f"cpu (gpu refused: {reason[:60]})"
+                log.warning(
+                    "slot %d: %s cannot run on %s (%s); using the CPU",
+                    self.index + 1,
+                    path.name,
+                    device,
+                    reason,
+                )
+                engine = None
+        if engine is None:
+            engine = SqwEngine(model, self.sr, self.block, targets.shape[0])
+        else:
+            del model  # the GPU copy is the one that runs; free the CPU weights
 
         self.metadata = metadata
         self.path = path
         self.name = str(metadata.get("model_name") or path.stem)
-        self.params = _read_param_specs(metadata)
-        self.param_targets = defaults.copy()
-        self.param_smoothed = defaults.copy()
-        for spec in self.params:  # metadata defaults win over the tensor's
-            if spec.row < self.param_targets.shape[0]:
-                self.param_targets[spec.row] = spec.default
-                self.param_smoothed[spec.row] = spec.default
-        self._params_buf = torch.zeros(
-            (defaults.shape[0], self.block), dtype=torch.float32
-        )
-        try:
-            self.mix = float(model.get_wet_default_value())
-        except Exception:
-            self.mix = 1.0
-
-        self.latency = int(
-            model.calc_buffering_delay_samples() + model.calc_model_delay_samples()
-        )
+        self.params = params
+        self.param_targets = targets.copy()
+        self.param_smoothed = targets.copy()
+        self.mix = mix
+        self.input_mono = input_mono
+        self.device = label
+        self.latency = int(engine.latency)
         self._dry_delay.set_delay(self.latency)
         # Assigned last: the worker treats a non-None model as "fully built".
-        self.model = model
+        self.model = engine
         self.status = "ready"
 
     def unload(self) -> None:
@@ -282,11 +450,18 @@ class Slot:
         self.name = "empty"
         self.status = "empty"
         self.params = []
-        self._params_buf = None
+        self.device = "-"
         self.latency = 0
         self.peak = 0.0
         self._dry_delay.set_delay(0)
         self._align_delay.set_delay(0)
+
+    def set_block(self, block: int) -> None:
+        self.block = int(block)
+        if self.model is not None:
+            self.model.set_block(self.block)
+            self.latency = int(self.model.latency)
+            self._dry_delay.set_delay(self.latency)
 
     def reset(self) -> None:
         if self.model is not None:
@@ -310,48 +485,40 @@ class Slot:
         return 0.0
 
     def _update_params(self) -> None:
-        """Slew continuous parameters toward their targets.
-
-        The wrapper averages the parameter tensor over a block, so a jump still
-        lands as a step; slewing spreads it over a few blocks and stops a fader
-        move from clicking.
-        """
-        import torch
-
-        if self._params_buf is None:
-            return
+        """Slew continuous parameters toward their targets, so a fader move or
+        an OSC jump spreads over a few blocks instead of stepping."""
         tgt, cur = self.param_targets, self.param_smoothed
         for spec in self.params:
             if spec.continuous:
                 cur[spec.row] += (tgt[spec.row] - cur[spec.row]) * self.param_slew
             else:
-                cur[spec.row] = tgt[spec.row]  # stepped values must not glide
-        self._params_buf.copy_(torch.from_numpy(cur).unsqueeze(1))
+                cur[spec.row] = tgt[spec.row]
 
     def process(self, x: np.ndarray) -> np.ndarray:
-        """One block. Runs on the pool, so grad mode is set here: in PyTorch it
-        is thread-local and would otherwise stay on in this thread."""
-        import torch
-
+        """One block. Runs on the pool, so grad mode is handled inside the
+        engines: in PyTorch it is thread-local."""
         if self.model is None:
             return np.zeros_like(x)
 
         conditioned = self.pre.process(x.copy())
-
-        with torch.no_grad():
-            self._update_params()
-            # Copy again: the wrapper writes into its input buffer.
-            xt = torch.from_numpy(np.ascontiguousarray(conditioned))
-            wet = self.model.forward(xt, self._params_buf).numpy().copy()
-
-        if wet.shape != x.shape:  # defensive; the wrapper normalises channels
+        self._update_params()
+        wet = self.model.forward(conditioned, self.param_smoothed)
+        if wet.shape != x.shape:  # defensive; both engines normalise channels
             wet = np.resize(wet, x.shape).astype(np.float32)
 
         wet = self.post.process(wet)
         dry = self._dry_delay.process(x)
         out = self.mix * wet + (1.0 - self.mix) * dry
         out = self._align_delay.process(out)
-        out = out * self.gain
+
+        g0, g1 = self._zone_g, float(self.zone_gain)
+        if abs(g1 - g0) > 1e-5:
+            out = out * np.linspace(
+                g0 * self.gain, g1 * self.gain, out.shape[1], dtype=np.float32
+            )
+        else:
+            out = out * (g1 * self.gain)
+        self._zone_g = g1
         self.peak = float(np.abs(out).max()) if out.size else 0.0
         return out.astype(np.float32, copy=False)
 
@@ -435,9 +602,21 @@ class Rack:
     # switch, which lets the swarm crossfade between the room and itself.
     INPUTS = ("mic", "synth", "file", "test")
 
-    def __init__(self, sr=48000, block=512, n_ch=1, source="device", wav=None,
-                 in_device=None, out_device=None, prime=3, validate=False,
-                 voices=8) -> None:
+    def __init__(
+        self,
+        sr=48000,
+        block=512,
+        n_ch=1,
+        source="device",
+        wav=None,
+        in_device=None,
+        out_device=None,
+        prime=3,
+        validate=False,
+        voices=synth_mod.MAX_VOICES,
+        device="cpu",
+        torch_threads="auto",
+    ) -> None:
         self.sr = sr
         self.block = block
         self.n_ch = n_ch
@@ -448,15 +627,49 @@ class Rack:
         self.prime = prime
         self.validate = validate
 
+        self.device = runner_mod.resolve_device(device)
+        self.torch_threads = torch_threads
         self.slots = [Slot(i, sr, block, n_ch) for i in range(N_SLOTS)]
         self.synth = synth_mod.Synth(sr, n_ch, voices)
+        self.zones = zones_mod.CameraZones(N_SLOTS)
+        # Split routing: the queen's voice into some models, the crowd into the
+        # others, each bus levelled so neither wins on loudness.
+        self.split = False
+        # shared: every slot hears the input mixer; split: queen and crowd
+        # buses; personal: one private model per client (personal.py)
+        self.routing = "shared"
+        self.personal = personal_mod.PersonalLayer(self)
+        self.levellers = {
+            "queen": synth_mod.BusLeveller(sr),
+            "crowd": synth_mod.BusLeveller(sr),
+        }
+        self._buses = None
         self.input_gain = {k: 0.0 for k in self.INPUTS}
         self.input_gain["mic" if source == "device" else source] = 1.0
         self.input_peak = 0.0
-        # Always try for a duplex stream so the mic can be switched on
-        # later without a restart; falls back if there is no input device.
+        # Always try for an input so the mic can be switched on later without
+        # a restart; falls back to output only if there is no input device.
+        # `duplex` means "an input is wanted", `duplex_active` "one is open".
         self.duplex = True
         self.duplex_active = False
+        # Which device channels are used. In: first channel, 0-based, or -1 to
+        # average all of them. Out: the first of the pair written to.
+        self.in_channel = 0
+        self.out_channel = 0
+        self._in_open = 1
+        self._out_open = 2
+        self._in_stream = None
+        self.io_mode = "stopped"
+        self.input_error = ""
+        # Raw device input, before the input gain: for the meter.
+        self.mic_peak = 0.0
+        self.mic_clips = 0
+        self.mic_blocks = 0
+        # Loudest peak since the window last asked. The window refreshes ten
+        # times a second and blocks arrive about fifty times, so reading the
+        # latest block alone would miss most transients.
+        self._mic_peak_acc = 0.0
+        self._out_peak_acc = 0.0
         # When linked, editing any slot's conditioning edits all four. The
         # four models usually want the same treatment, and keeping them in
         # step by hand across four tabs is where mistakes live.
@@ -490,6 +703,7 @@ class Rack:
         self._src_pos = 0
         self._phase = 0
         self._registry_version = 0
+        self.tuned_threads = 0
         self._reg_cache = None
         self._reg_cache_version = -1
 
@@ -499,7 +713,7 @@ class Rack:
         slot = self.slots[index]
         slot.status = "loading"
         try:
-            slot.load(Path(path), validate=self.validate)
+            slot.load(Path(path), validate=self.validate, device=self.device)
         except Exception as exc:  # a bad .nm must not take the rack down
             slot.unload()
             slot.status = f"error: {exc}"
@@ -525,23 +739,69 @@ class Rack:
         self.latency = worst
 
     def bind_osc(self, receiver) -> None:
-        """Hook up the events that are not numbers: the crown, and leaving."""
+        """Hook up everything that is an identity rather than a value: who is
+        present, who left, who wears the crown, and where people stand."""
         receiver.on_queen = self.set_queen
         receiver.on_leave = self.release_voice
+        receiver.on_join = self.synth.join
+        receiver.on_roster = self.synth.roster
+        receiver.on_cam_person = self.zones.on_person
+        receiver.on_cam_cluster = self.zones.on_cluster
 
     def set_queen(self, uid: str, slot: int) -> None:
         self.synth.set_queen(uid, slot)
         log.info("queen: %s (slot %s)", uid or "nobody", slot or "-")
 
-    def release_voice(self, slot: int) -> None:
-        """A phone left, so free its voice now rather than waiting for the
+    def release_voice(self, slot: int, uid: str = "") -> None:
+        """A phone left, so fade its voice now rather than waiting for the
         timeout. The drone queen is exempt: she is meant to hang on."""
-        i = int(slot) - 1
-        if 0 <= i < self.synth.n_voices:
-            if i == self.synth.queen_index and self.synth.queen_floor() > 0.0:
-                return
-            self.synth.voices[i].level = 0.0
-            self.synth.voices[i].touched = 0.0
+        self.synth.leave(int(slot), uid)
+
+    # -- routing the synth to the slots --------------------------------------
+
+    def set_slot_source(self, index: int, source: str) -> None:
+        if source not in SOURCES:
+            raise KeyError(source)
+        self.slots[index].source = source
+
+    ROUTINGS = ("shared", "split", "personal")
+
+    def set_routing(self, mode: str) -> None:
+        """shared, split, or personal. Personal hands the synth voices to one
+        model per client and leaves the four slots as templates."""
+        if mode not in self.ROUTINGS:
+            raise KeyError(mode)
+        if mode == "split":
+            self.set_split(True)
+        elif self.split:
+            self.set_split(False)
+        self.routing = mode
+        if mode == "personal":
+            self.select_input("synth")
+            self.personal._last_count = -1
+        else:
+            self.personal.clear()
+        log.info("routing: %s", mode)
+
+    def set_split(self, on: bool) -> None:
+        """The queen game: her voice into slots 1 and 3, everyone else's into 2
+        and 4. Load different models into the odd and even slots and the room
+        has to work out which timbre is the queen. Level-changing queen modes
+        are bypassed while this is on, so loudness never gives it away."""
+        self.split = bool(on)
+        self.synth.split = self.split
+        if self.split:
+            self.routing = "split"
+        elif self.routing == "split":
+            self.routing = "shared"
+        plan = (
+            ("queen", "crowd", "queen", "crowd") if self.split else ("all",) * N_SLOTS
+        )
+        for slot, src in zip(self.slots, plan):
+            slot.source = src
+        for lv in self.levellers.values():
+            lv.reset()
+        log.info("split routing %s", "on" if self.split else "off")
 
     def set_block(self, block: int) -> None:
         """Change the audio block size, restarting the stream if it is running.
@@ -550,8 +810,6 @@ class Rack:
         and its I/O buffers from the block and will not otherwise accept one of
         a different length.
         """
-        import torch
-
         block = int(block)
         if block == self.block or block < 32:
             return
@@ -561,19 +819,15 @@ class Rack:
         self.block = block
         with self._lock:
             for s in self.slots:
-                s.block = block
-                if s.model is None:
-                    continue
-                s.model.set_daw_sample_rate_and_buffer_size(self.sr, block)
-                s.model.reset()
-                rows = s.param_targets.shape[0]
-                s._params_buf = torch.zeros((rows, block), dtype=torch.float32)
-                s.latency = int(s.model.calc_buffering_delay_samples()
-                                + s.model.calc_model_delay_samples())
-                s._dry_delay.set_delay(s.latency)
+                s.set_block(block)
             self._rebalance_latency()
-        log.info("block size now %d (%.1f ms), model latency %d samples",
-                 block, 1000.0 * block / self.sr, self.latency)
+        self.personal.set_block(block)
+        log.info(
+            "block size now %d (%.1f ms), model latency %d samples",
+            block,
+            1000.0 * block / self.sr,
+            self.latency,
+        )
         if was_running:
             self.start()
 
@@ -602,8 +856,7 @@ class Rack:
         closures each time burned more CPU than all four models put together
         and starved the audio worker into underruns.
         """
-        if (self._reg_cache is None
-                or self._reg_cache_version != self._registry_version):
+        if self._reg_cache is None or self._reg_cache_version != self._registry_version:
             self._reg_cache = self._build_registry()
             self._reg_cache_version = self._registry_version
         return self._reg_cache
@@ -617,21 +870,50 @@ class Rack:
         for i, slot in enumerate(self.slots):
             n = i + 1
             g = f"slot {n}"
-            add(f"slot{n}.level", "level", g, LEVEL,
+            add(
+                f"slot{n}.level",
+                "level",
+                g,
+                LEVEL,
                 lambda s=slot: gain_to_db(s.gain),
-                lambda v, s=slot: setattr(s, "gain", db_to_gain(v)))
-            add(f"slot{n}.mix", "dry/wet", g, MIX,
+                lambda v, s=slot: setattr(s, "gain", db_to_gain(v)),
+            )
+            add(
+                f"slot{n}.mix",
+                "dry/wet",
+                g,
+                MIX,
                 lambda s=slot: s.mix,
-                lambda v, s=slot: setattr(s, "mix", v))
-            add(f"slot{n}.on", "on", g, SWITCH,
+                lambda v, s=slot: setattr(s, "mix", v),
+            )
+            add(
+                f"slot{n}.on",
+                "on",
+                g,
+                SWITCH,
                 lambda s=slot: 1.0 if s.enabled else 0.0,
-                lambda v, s=slot: setattr(s, "enabled", v >= 0.5))
+                lambda v, s=slot: setattr(s, "enabled", v >= 0.5),
+            )
+            add(
+                f"slot{n}.source",
+                "input",
+                g,
+                SOURCE,
+                lambda s=slot: float(SOURCES.index(s.source)),
+                lambda v, s=slot: setattr(
+                    s, "source", SOURCES[int(round(v)) % len(SOURCES)]
+                ),
+            )
 
             for spec in slot.params:
-                add(f"slot{n}.model.p{spec.row + 1}", spec.name, f"slot {n} model",
+                add(
+                    f"slot{n}.model.p{spec.row + 1}",
+                    spec.name,
+                    f"slot {n} model",
                     UNIT,
                     lambda s=slot, r=spec.row: s.get_param(r),
-                    lambda v, s=slot, r=spec.row: s.set_param(r, v))
+                    lambda v, s=slot, r=spec.row: s.set_param(r, v),
+                )
 
             for stage, chain in (("pre", slot.pre), ("post", slot.post)):
                 for eff in chain.effects:
@@ -639,57 +921,129 @@ class Rack:
                     # Written through the rack rather than straight at the
                     # effect, so "link all slots" works for OSC as well as for
                     # the window.
-                    add(f"slot{n}.{stage}.{eff.name}.on", "enabled", grp, SWITCH,
+                    add(
+                        f"slot{n}.{stage}.{eff.name}.on",
+                        "enabled",
+                        grp,
+                        SWITCH,
                         lambda e=eff: 1.0 if e.enabled else 0.0,
-                        lambda v, st=stage, en=eff.name, sl=slot:
-                            self.set_chain_enabled(st, en, v >= 0.5, sl))
+                        lambda v, st=stage, en=eff.name, sl=slot: self.set_chain_enabled(
+                            st, en, v >= 0.5, sl
+                        ),
+                    )
                     for p in eff.params:
-                        add(f"slot{n}.{stage}.{eff.name}.{p.name}", p.label, grp, p,
+                        add(
+                            f"slot{n}.{stage}.{eff.name}.{p.name}",
+                            p.label,
+                            grp,
+                            p,
                             lambda e=eff, nm=p.name: e.get(nm),
-                            lambda v, st=stage, en=eff.name, nm=p.name, sl=slot:
-                                self.set_chain_param(st, en, nm, v, sl))
+                            lambda v, st=stage, en=eff.name, nm=p.name, sl=slot: self.set_chain_param(
+                                st, en, nm, v, sl
+                            ),
+                        )
 
         # the input mixer: what the four models are chewing on
         for name in self.INPUTS:
-            add(f"input.{name}", name, "input", LEVEL,
+            add(
+                f"input.{name}",
+                name,
+                "input",
+                LEVEL,
                 lambda k=name: gain_to_db(self.input_gain[k]),
-                lambda v, k=name: self.input_gain.__setitem__(k, db_to_gain(v)))
+                lambda v, k=name: self.input_gain.__setitem__(k, db_to_gain(v)),
+            )
 
         # the synth: one voice per client
         for p in synth_mod.SYNTH_PARAMS:
-            add(f"synth.{p.name}", p.label, "synth", p,
+            add(
+                f"synth.{p.name}",
+                p.label,
+                "synth",
+                p,
                 lambda nm=p.name: self.synth.get(nm),
-                lambda v, nm=p.name: self.synth.set(nm, v))
+                lambda v, nm=p.name: self.synth.set(nm, v),
+            )
         for v_i, voice in enumerate(self.synth.voices):
             n = v_i + 1
             grp = f"synth voice {n}"
             for p in synth_mod.VOICE_PARAMS:
-                if p.name == "level":
-                    # Writing a level is also what marks the voice alive, so a
-                    # client that leaves and stops sending times out instead of
-                    # droning on its last value forever.
-                    add(f"synth.voice{n}.level", "level", grp, p,
-                        lambda vo=voice: vo.level,
-                        lambda val, vo=voice, k=v_i: (
-                            setattr(vo, "level", val), self.synth.touch(k)
-                        )[0])
-                else:
-                    add(f"synth.voice{n}.{p.name}", p.label, grp, p,
-                        lambda vo=voice, nm=p.name: getattr(vo, nm),
-                        lambda val, vo=voice, nm=p.name: setattr(vo, nm, val))
+                # Any write is proof a client holds this slot, and refreshes
+                # the timeout that fades a voice whose phone has gone quiet.
+                add(
+                    f"synth.voice{n}.{p.name}",
+                    p.label,
+                    grp,
+                    p,
+                    lambda vo=voice, nm=p.name: getattr(vo, nm),
+                    lambda val, vo=voice, nm=p.name, k=v_i: (
+                        setattr(vo, nm, val),
+                        self.synth.touch(k),
+                    )[0],
+                )
 
-        add("master.level", "level", "master", LEVEL,
+        add(
+            "routing.split",
+            "queen split",
+            "routing",
+            SWITCH,
+            lambda: 1.0 if self.split else 0.0,
+            lambda v: self.set_split(v >= 0.5),
+        )
+        add(
+            "routing.mode",
+            "routing",
+            "routing",
+            dsp.Param("mode", "routing", 0.0, len(self.ROUTINGS) - 1.0, 0.0, ""),
+            lambda: float(self.ROUTINGS.index(self.routing)),
+            lambda v: self.set_routing(self.ROUTINGS[int(round(v)) % len(self.ROUTINGS)]),
+        )
+        for p in personal_mod.PERSONAL_PARAMS:
+            add(
+                f"personal.{p.name}",
+                p.label,
+                "personal models",
+                p,
+                lambda nm=p.name: self.personal.get(nm),
+                lambda v, nm=p.name: self.personal.set(nm, v),
+            )
+        for p in zones_mod.ZONE_PARAMS:
+            add(
+                f"zones.{p.name}",
+                p.label,
+                "camera sections",
+                p,
+                lambda nm=p.name: self.zones.get(nm),
+                lambda v, nm=p.name: self.zones.set(nm, v),
+            )
+
+        add(
+            "master.level",
+            "level",
+            "master",
+            LEVEL,
             lambda: gain_to_db(self.master_gain),
-            lambda v: setattr(self, "master_gain", db_to_gain(v)))
+            lambda v: setattr(self, "master_gain", db_to_gain(v)),
+        )
         for eff in (self.master_reverb, self.master_limiter):
             grp = f"master {eff.name}"
-            add(f"master.{eff.name}.on", "enabled", grp, SWITCH,
+            add(
+                f"master.{eff.name}.on",
+                "enabled",
+                grp,
+                SWITCH,
                 lambda e=eff: 1.0 if e.enabled else 0.0,
-                lambda v, e=eff: setattr(e, "enabled", v >= 0.5))
+                lambda v, e=eff: setattr(e, "enabled", v >= 0.5),
+            )
             for p in eff.params:
-                add(f"master.{eff.name}.{p.name}", p.label, grp, p,
+                add(
+                    f"master.{eff.name}.{p.name}",
+                    p.label,
+                    grp,
+                    p,
                     lambda e=eff, nm=p.name: e.get(nm),
-                    lambda v, e=eff, nm=p.name: e.set(nm, v))
+                    lambda v, e=eff, nm=p.name: e.set(nm, v),
+                )
         return reg
 
     @property
@@ -739,24 +1093,26 @@ class Rack:
         """Apply a snapshot to one slot, or to all of them."""
         targets = self.slots if index is None else [self.slots[index]]
         for slot in targets:
-            for stage in ("pre", "post"):
-                for eff in self._chain_of(slot, stage).effects:
-                    spec = (data.get(stage) or {}).get(eff.name)
-                    if not spec:
-                        continue
-                    eff.enabled = bool(spec.get("on", eff.enabled))
-                    for key, value in spec.items():
-                        if key != "on":
-                            try:
-                                eff.set(key, value)
-                            except KeyError:
-                                pass
+            self.paste_chain_into(slot, data)
+
+    def paste_chain_into(self, slot, data: dict) -> None:
+        """Apply a snapshot to any Slot object, including a personal copy."""
+        for stage in ("pre", "post"):
+            for eff in self._chain_of(slot, stage).effects:
+                spec = (data.get(stage) or {}).get(eff.name)
+                if not spec:
+                    continue
+                eff.enabled = bool(spec.get("on", eff.enabled))
+                for key, value in spec.items():
+                    if key != "on":
+                        try:
+                            eff.set(key, value)
+                        except KeyError:
+                            pass
 
     def apply_chain_preset(self, name: str, slot_index=None) -> None:
         """Set a named conditioning setup on one slot, or on all of them."""
-        targets = (
-            self.slots if slot_index is None else [self.slots[slot_index]]
-        )
+        targets = self.slots if slot_index is None else [self.slots[slot_index]]
         for s in targets:
             dsp.apply_chain_preset(s, name)
         log.info("chain setup %r applied to %d slot(s)", name, len(targets))
@@ -802,7 +1158,10 @@ class Rack:
             log.warning(
                 "%s is %d Hz but the rack runs at %d Hz, so it will play back at "
                 "the wrong pitch. Resample the file, or run with --sr %d.",
-                self.wav, file_sr, self.sr, file_sr,
+                self.wav,
+                file_sr,
+                self.sr,
+                file_sr,
             )
         data = data.T
         if data.shape[0] < self.n_ch:
@@ -830,7 +1189,9 @@ class Rack:
         filled = 0
         while filled < n:
             take = min(n - filled, src.shape[1] - self._src_pos)
-            out[:, filled : filled + take] = src[:, self._src_pos : self._src_pos + take]
+            out[:, filled : filled + take] = src[
+                :, self._src_pos : self._src_pos + take
+            ]
             filled += take
             self._src_pos = (self._src_pos + take) % src.shape[1]
         return out
@@ -845,13 +1206,35 @@ class Rack:
         return np.repeat(mono.astype(np.float32)[None, :], self.n_ch, axis=0)
 
     def _build_input(self, mic) -> np.ndarray:
-        """Mix whichever sources are up into the block the models will see."""
+        """Mix whichever sources are up into the block the models will see.
+
+        Returns the "all" bus; the queen and crowd buses for split routing are
+        left in self._buses, rendered from the same pass of the synth.
+        """
         g = self.input_gain
-        out = np.zeros((self.n_ch, self.block), dtype=np.float32)
+        n = self.block
+        out = np.zeros((self.n_ch, n), dtype=np.float32)
         if mic is not None and g["mic"] > 1e-4:
             out += mic * g["mic"]
-        if g["synth"] > 1e-4:
-            out += self.synth.render(self.block) * g["synth"]
+        wants_split = (
+            any(sl.source in ("queen", "crowd") for sl in self.slots)
+            or self.routing == "personal"
+        )
+        if g["synth"] > 1e-4 or wants_split:
+            full, queen, crowd = self.synth.render_buses(n)
+            if g["synth"] > 1e-4:
+                out += full[None, :] * g["synth"]
+            if wants_split:
+                q = self.levellers["queen"].process(queen)
+                c = self.levellers["crowd"].process(crowd)
+                self._buses = (
+                    np.repeat(q[None, :], self.n_ch, axis=0),
+                    np.repeat(c[None, :], self.n_ch, axis=0),
+                )
+            else:
+                self._buses = None
+        else:
+            self._buses = None
         if g["file"] > 1e-4 and self._src_audio is not None:
             out += self._file_block() * g["file"]
         if g["test"] > 1e-4:
@@ -866,27 +1249,46 @@ class Rack:
     # -- audio callbacks (no inference here, ever) --------------------------
 
     def _push_out(self, outdata) -> None:
+        outdata.fill(0.0)
         try:
             y = self._out_q.get_nowait()
         except queue.Empty:
-            outdata.fill(0.0)
             self.underruns += 1
             return
-        if self.n_ch == 1:
-            outdata[:, 0] = y[0]
-            if outdata.shape[1] > 1:
-                outdata[:, 1] = y[0]
+        # Write to the chosen pair and leave every other output channel silent,
+        # so a multi-channel interface can feed a particular pair of speakers.
+        width = outdata.shape[1]
+        left = min(self.out_channel, width - 1)
+        right = left + 1
+        outdata[:, left] = y[0]
+        if right < width:
+            outdata[:, right] = y[1] if y.shape[0] > 1 else y[0]
+
+    def _capture(self, indata) -> None:
+        """Take the chosen channels from a device block and queue them."""
+        if self.in_channel < 0:
+            mono = indata.mean(axis=1)
+            block = np.repeat(mono[None, :], self.n_ch, axis=0)
         else:
-            outdata[:] = y.T
+            width = indata.shape[1]
+            cols = [min(self.in_channel + c, width - 1) for c in range(self.n_ch)]
+            block = indata[:, cols].T
+        try:
+            self._in_q.put_nowait(np.ascontiguousarray(block, dtype=np.float32))
+        except queue.Full:
+            self.dropped += 1
 
     def _duplex_cb(self, indata, outdata, frames, time_info, status) -> None:
         if status:
             self.dropped += 1
-        try:
-            self._in_q.put_nowait(indata.T.copy())
-        except queue.Full:
-            self.dropped += 1
+        self._capture(indata)
         self._push_out(outdata)
+
+    def _input_cb(self, indata, frames, time_info, status) -> None:
+        # Only used when input and output could not share one stream.
+        if status:
+            self.dropped += 1
+        self._capture(indata)
 
     def _output_cb(self, outdata, frames, time_info, status) -> None:
         if status:
@@ -913,6 +1315,17 @@ class Rack:
                     mic = self._in_q.get(timeout=0.5)
                 except queue.Empty:
                     continue
+                # Metered here rather than in the callback, which must stay
+                # as short as possible.
+                peak = float(np.abs(mic).max()) if mic.size else 0.0
+                self.mic_peak = peak
+                self.mic_blocks += 1
+                if peak > self._mic_peak_acc:
+                    self._mic_peak_acc = peak
+                if peak >= 0.999:
+                    self.mic_clips += 1
+            else:
+                self.mic_peak = 0.0
             x = self._build_input(mic)
 
             t0 = time.perf_counter()
@@ -933,16 +1346,32 @@ class Rack:
             any_solo = any(s.solo for s in slots)
 
         mix = np.zeros((self.n_ch, self.block), dtype=np.float32)
+        gains = self.zones.update()
+        for i, sl in enumerate(self.slots):
+            sl.zone_gain = gains[i]
+        silence = np.zeros_like(x)
+        buses = self._buses
+        if self.routing == "personal":
+            # The slots are templates now; the private copies are what plays.
+            slots = []
+            mix += self.personal.process(self._pool)
+
+        def feed(sl):
+            if sl.source == "all":
+                return x
+            if sl.source == "off" or buses is None:
+                return silence
+            return buses[0] if sl.source == "queen" else buses[1]
+
         if slots:
             # Every loaded model runs every block, muted or not: CPU load stays
-            # flat and unmuting is instant and still time-aligned. Torch
-            # releases the GIL in the forward pass so the four overlap. Without
-            # a pool they run in turn, so the rack works when driven directly.
+            # flat and unmuting is instant and still time-aligned. Without a
+            # pool they run in turn, so the rack works when driven directly.
             if self._pool is not None:
-                pending = [(s, self._pool.submit(s.process, x)) for s in slots]
+                pending = [(s, self._pool.submit(s.process, feed(s))) for s in slots]
                 results = [(s, f.result) for s, f in pending]
             else:
-                results = [(s, lambda s=s: s.process(x)) for s in slots]
+                results = [(s, lambda s=s: s.process(feed(s))) for s in slots]
             for s, get in results:
                 try:
                     out = get()
@@ -950,13 +1379,15 @@ class Rack:
                     s.status = f"error: {exc}"
                     log.error("slot %d failed: %s", s.index + 1, exc)
                     continue
-                if (s.solo if any_solo else s.enabled):
+                if s.solo if any_solo else s.enabled:
                     mix += out
 
         mix = self.master_reverb.process(mix)
         mix = mix * self.master_gain
         mix = self.master_limiter.process(mix)
         self.master_peak = float(np.abs(mix).max()) if mix.size else 0.0
+        if self.master_peak > self._out_peak_acc:
+            self._out_peak_acc = self.master_peak
         if self.master_peak > 1.0:
             self.clips += 1
             np.clip(mix, -1.0, 1.0, out=mix)
@@ -974,6 +1405,7 @@ class Rack:
         """
         silence = np.zeros((self.n_ch, self.block), dtype=np.float32)
         t0 = time.perf_counter()
+        self._tune_threads(silence)
         for _ in range(n_blocks):
             self._process_block(silence)
         with self._lock:
@@ -983,8 +1415,58 @@ class Rack:
             self.master_limiter.reset()
         self.load_pct = 0.0
         self.master_peak = 0.0
-        log.debug("warm-up: %d blocks in %.0f ms", n_blocks,
-                  1000 * (time.perf_counter() - t0))
+        log.debug(
+            "warm-up: %d blocks in %.0f ms", n_blocks, 1000 * (time.perf_counter() - t0)
+        )
+
+    def _tune_threads(self, silence) -> None:
+        """Pick torch's intra-op thread count by timing it, once per start.
+
+        The right number depends on the models and the machine, so it is
+        measured, starting from one thread and only stepping up for a clear win.
+        GPU slots do almost no CPU work, so they need no tuning.
+        """
+        import torch
+
+        if self.torch_threads != "auto":
+            torch.set_num_threads(max(1, int(self.torch_threads)))
+            return
+        cpu_slots = [
+            sl
+            for sl in self.slots
+            if sl.model is not None and getattr(sl.model, "kind", "cpu") == "cpu"
+        ]
+        if not cpu_slots:
+            torch.set_num_threads(2)
+            self.tuned_threads = 2
+            return
+        cores = os.cpu_count() or 4
+        best, best_t = 1, float("inf")
+        for t in (1, 2, 3, 4, 6):
+            if t * len(cpu_slots) > cores:
+                break
+            torch.set_num_threads(t)
+            for _ in range(4):
+                self._process_block(silence)
+            t0 = time.perf_counter()
+            for _ in range(6):
+                self._process_block(silence)
+            took = time.perf_counter() - t0
+            # More threads must earn their keep. Torch's workers spin while they
+            # wait, so three threads per model cost the four heavy models here
+            # 54% of the machine against 15% at one thread, for the same audio
+            # speed -- cores the backend and the camera need. Only a clear win
+            # (15% faster) justifies stepping up.
+            if took < best_t * 0.85:
+                best, best_t = t, took
+        torch.set_num_threads(best)
+        self.tuned_threads = best
+        log.info(
+            "torch: %d intra-op thread(s) per model is fastest here (%.0f%% "
+            "of the block budget)",
+            best,
+            100.0 * best_t / 6.0 / (self.block / self.sr),
+        )
 
     def start(self) -> None:
         if self.running:
@@ -1006,45 +1488,31 @@ class Rack:
         for _ in range(self.prime):
             self._out_q.put_nowait(np.zeros((self.n_ch, self.block), dtype=np.float32))
 
-        self._pool = ThreadPoolExecutor(max_workers=N_SLOTS, thread_name_prefix="slot")
+        # Sixteen workers rather than four, so private per-client models run
+        # side by side too; idle workers cost nothing.
+        self._pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="slot")
         self._warmup()
         self._worker = threading.Thread(target=self._run, name="rack", daemon=True)
         self._worker.start()
 
         try:
-            self._stream = None
-            if self.duplex:
-                try:
-                    self._stream = sd.Stream(
-                        samplerate=self.sr, blocksize=self.block, dtype="float32",
-                        channels=(self.n_ch, 2),
-                        device=(self.in_device, self.out_device),
-                        callback=self._duplex_cb,
-                    )
-                    self.duplex_active = True
-                except Exception as exc:
-                    # No usable input device. Everything except the mic still
-                    # works, so open output-only rather than refusing to start.
-                    log.warning("no audio input (%s); the mic source is off", exc)
-                    self.duplex_active = False
-            if self._stream is None:
-                self._stream = sd.OutputStream(
-                    samplerate=self.sr, blocksize=self.block, dtype="float32",
-                    channels=2, device=self.out_device, callback=self._output_cb,
-                )
-            self._stream.start()
+            self._open_streams(sd)
         except Exception:
             self._stop.set()
             self._worker.join(timeout=2.0)
             self._pool.shutdown(wait=False)
-            self._worker, self._pool, self._stream = None, None, None
+            self._close_streams()
+            self._worker, self._pool = None, None
             raise
 
         self.running = True
         log.info(
             "rack running: %d Hz, %d-sample blocks, %s input, model latency %d "
             "samples (%.1f ms)",
-            self.sr, self.block, self.current_input(), self.latency,
+            self.sr,
+            self.block,
+            self.current_input(),
+            self.latency,
             1000.0 * self.latency / self.sr,
         )
 
@@ -1053,10 +1521,7 @@ class Rack:
             return
         self.running = False
         self._stop.set()
-        if self._stream is not None:
-            self._stream.stop()
-            self._stream.close()
-            self._stream = None
+        self._close_streams()
         if self._worker is not None:
             self._worker.join(timeout=2.0)
             self._worker = None
@@ -1064,4 +1529,141 @@ class Rack:
             self._pool.shutdown(wait=True)
             self._pool = None
         self.duplex_active = False
+        self.io_mode = "stopped"
+        self.mic_peak = 0.0
         log.info("rack stopped")
+
+    # -- devices ------------------------------------------------------------
+
+    def _open_streams(self, sd) -> None:
+        """Open the sound card: one duplex stream when possible, else two.
+
+        A duplex stream shares one clock between input and output, which is
+        best. PortAudio can only build one when both devices are on the same
+        host API, though -- ASIO in with WASAPI out is refused -- so in that case
+        the input gets its own stream. The two clocks then drift by a few parts
+        per million, which shows up as an occasional dropped or repeated block
+        many minutes apart. With no usable input at all, the rack runs output
+        only and says why, rather than refusing to start.
+        """
+        self._stream = None
+        self._in_stream = None
+        self.duplex_active = False
+        self.input_error = ""
+        devices_mod.use_preferred_defaults()
+
+        out_info = sd.query_devices(self.out_device, "output")
+        max_out = int(out_info["max_output_channels"])
+        if max_out < 1:
+            raise RuntimeError("the chosen output device has no outputs")
+        self._out_open = max(1, min(max_out, self.out_channel + 2))
+        common = dict(samplerate=self.sr, blocksize=self.block, dtype="float32")
+        out_extra = devices_mod.extra_settings(self.out_device, "out")
+
+        if self.duplex:
+            try:
+                in_info = sd.query_devices(self.in_device, "input")
+                max_in = int(in_info["max_input_channels"])
+                if max_in < 1:
+                    raise RuntimeError("the chosen input device has no inputs")
+                if self.in_channel < 0:
+                    self._in_open = min(max_in, 32)
+                else:
+                    self._in_open = max(1, min(max_in, self.in_channel + self.n_ch))
+                in_extra = devices_mod.extra_settings(self.in_device, "in")
+                if in_info["hostapi"] == out_info["hostapi"]:
+                    try:
+                        self._stream = sd.Stream(
+                            channels=(self._in_open, self._out_open),
+                            device=(self.in_device, self.out_device),
+                            callback=self._duplex_cb,
+                            extra_settings=(in_extra, out_extra),
+                            **common,
+                        )
+                        self.io_mode = "duplex"
+                    except Exception as exc:
+                        log.info("duplex stream refused (%s); trying two streams", exc)
+                if self._stream is None:
+                    self._in_stream = sd.InputStream(
+                        channels=self._in_open,
+                        device=self.in_device,
+                        callback=self._input_cb,
+                        extra_settings=in_extra,
+                        **common,
+                    )
+                    self.io_mode = "separate"
+                self.duplex_active = True
+            except Exception as exc:
+                self._in_stream = None
+                self.input_error = str(exc).splitlines()[0][:160]
+                log.warning("no audio input (%s); the mic source is off",
+                            self.input_error)
+
+        if self._stream is None:
+            self._stream = sd.OutputStream(
+                channels=self._out_open,
+                device=self.out_device,
+                callback=self._output_cb,
+                extra_settings=out_extra,
+                **common,
+            )
+            if not self.duplex_active:
+                self.io_mode = "output only"
+        if self._in_stream is not None:
+            self._in_stream.start()
+        self._stream.start()
+
+    def _close_streams(self) -> None:
+        for name in ("_in_stream", "_stream"):
+            st = getattr(self, name, None)
+            if st is not None:
+                try:
+                    st.stop()
+                    st.close()
+                except Exception:
+                    pass
+            setattr(self, name, None)
+
+    def set_audio(self, in_device="keep", out_device="keep", in_channel=None,
+                  out_channel=None, input_enabled=None) -> None:
+        """Change devices or channels, restarting the stream if it is running.
+
+        "keep" leaves a device as it is; None means the system default. If the
+        new settings will not open, the old ones are put back and the error is
+        raised, so a bad choice never leaves the rack silent.
+        """
+        old = (self.in_device, self.out_device, self.in_channel,
+               self.out_channel, self.duplex)
+        was_running = self.running
+        if was_running:
+            self.stop()
+        if in_device != "keep":
+            self.in_device = in_device
+        if out_device != "keep":
+            self.out_device = out_device
+        if in_channel is not None:
+            self.in_channel = int(in_channel)
+        if out_channel is not None:
+            self.out_channel = max(0, int(out_channel))
+        if input_enabled is not None:
+            self.duplex = bool(input_enabled)
+        self.mic_clips = 0
+        if not was_running:
+            return
+        try:
+            self.start()
+        except Exception:
+            (self.in_device, self.out_device, self.in_channel,
+             self.out_channel, self.duplex) = old
+            try:
+                self.start()
+            except Exception as exc:
+                log.error("could not restore the previous audio devices: %s", exc)
+            raise
+
+    def take_peaks(self):
+        """(input peak, output peak) since the last call, then start over."""
+        mic, out = self._mic_peak_acc, self._out_peak_acc
+        self._mic_peak_acc = 0.0
+        self._out_peak_acc = 0.0
+        return mic, out
