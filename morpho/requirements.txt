@@ -1,0 +1,14 @@
+# morpho_rack.py
+#
+# neutone_sdk is Neutone's Python SDK. Morpho itself is a plugin with no Python
+# API; both it and Neutone FX/Gen use the same .nm model files, which is what
+# the rack loads. The SDK is only needed for --validate and for exporting your
+# own models; loading and running a .nm needs just torch.
+neutone_sdk>=1.5.2
+torch>=2.0
+numpy>=1.24
+scipy>=1.10          # lfilter, for the biquads in the conditioning chain
+sounddevice>=0.4.6   # PortAudio bindings
+
+# only needed for --input file
+soundfile>=0.12
