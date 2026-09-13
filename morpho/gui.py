@@ -849,15 +849,49 @@ class App:
             title="save preset", defaultextension=".json",
             initialdir=str(self.preset_dir), filetypes=[("preset", "*.json")])
         if p:
-            self.rack.save_preset(p)
+            # The routing table belongs to the receiver, so the rack is handed
+            # it rather than reaching for it: one file holds the whole setup.
+            self.rack.save_preset(p, osc=self.osc.to_dict())
 
     def _load_preset(self):
         p = filedialog.askopenfilename(
             title="load preset", initialdir=str(self.preset_dir),
             filetypes=[("preset", "*.json")])
-        if p:
-            self.rack.load_preset(p)
-            self._rebuild_all()
+        if not p:
+            return
+        try:
+            osc = self.rack.load_preset(p)
+        except Exception as exc:
+            messagebox.showerror("load preset", str(exc))
+            return
+        if osc:
+            self.osc.from_dict(osc)
+            self.port_var.set(str(self.osc.port))
+            self._refill_map_tree()
+        self._rebuild_all()
+        self._sync_widgets()
+
+    def _sync_widgets(self):
+        """Pull every switch and dropdown back from the rack.
+
+        The refresh loop re-reads the sliders on its own, and the ones it does
+        not re-read are exactly the ones a preset can change underneath the
+        window: without this a loaded preset would play correctly while the
+        window still showed the old setup.
+        """
+        self.input_var.set(self.rack.current_input())
+        self.link_var.set(self.rack.link_chains)
+        self.zones_var.set(self.rack.zones.get("on") >= 0.5)
+        self.layout_box.set(self.rack.zones.layout)
+        self.assign_box.set(self.rack.personal.assign)
+        self.scale_box.set(self.rack.synth.scale_name())
+        self.queen_box.set(self.rack.synth.queen_mode_name())
+        self._queen_why()
+        for i, ui in enumerate(self.slot_ui):
+            ui["solo"].set(self.rack.slots[i].solo)
+        self.routing_var.set(self.rack.routing)
+        # Also puts the source dropdowns and the private-models row right.
+        self._change_routing(apply=False)
 
     # -- rack tab -----------------------------------------------------------
 
@@ -981,6 +1015,8 @@ class App:
         ttk.Checkbutton(toggles, text="solo", variable=solo_var,
                         command=lambda s=slot, v=solo_var:
                         setattr(s, "solo", v.get())).pack(side="left", padx=6)
+        # Kept so loading a preset can put the button back where it was; the
+        # rack is the truth, this only follows it.
 
         src_row = ttk.Frame(frame)
         src_row.pack(fill="x", pady=(4, 0))
@@ -1024,7 +1060,7 @@ class App:
         meter.pack(fill="x", side="bottom", pady=(6, 0))
 
         ui = {"name": name, "info": info, "picker": picker, "meter": meter,
-              "params_frame": params_frame, "rows": rows,
+              "params_frame": params_frame, "rows": rows, "solo": solo_var,
               "switches": [on, repitch],
               "param_rows": [], "source": source, "section": section,
               "section_text": section_text,

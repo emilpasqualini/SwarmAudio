@@ -412,22 +412,29 @@ class Receiver:
                 self._mappings.remove(mapping)
                 self._reindex()
 
-    def save(self, path: Path) -> None:
+    def to_dict(self) -> dict:
+        """The whole routing table as plain data, for a file or a preset."""
         with self._lock:
-            rows = [m.to_dict() for m in self.mappings]
-        Path(path).write_text(
-            json.dumps({"port": self.port, "mappings": rows}, indent=1),
-            encoding="utf-8",
-        )
-        log.info("osc: wrote %d mappings to %s", len(rows), path)
+            return {"port": self.port, "mappings": [m.to_dict() for m in self.mappings]}
 
-    def load(self, path: Path) -> int:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    def from_dict(self, data: dict) -> int:
+        """Replace the routing table. The port is remembered but not reopened:
+        a receiver already listening keeps its socket until it is stopped and
+        started again, the same as loading a routing file."""
         rows = [Mapping(**r) for r in data.get("mappings", [])]
         self.mappings = rows
         self.port = int(data.get("port", self.port))
-        log.info("osc: loaded %d mappings from %s", len(rows), path)
         return len(rows)
+
+    def save(self, path: Path) -> None:
+        data = self.to_dict()
+        Path(path).write_text(json.dumps(data, indent=1), encoding="utf-8")
+        log.info("osc: wrote %d mappings to %s", len(data["mappings"]), path)
+
+    def load(self, path: Path) -> int:
+        n = self.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+        log.info("osc: loaded %d mappings from %s", n, path)
+        return n
 
 
 _EVENT_ADDRESSES = frozenset(

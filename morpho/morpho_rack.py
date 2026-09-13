@@ -37,7 +37,7 @@ Usage
     python morpho_rack.py --osc-port 9001        # listen for the swarm
     python morpho_rack.py --default-routing      # swarm and client routes
     python morpho_rack.py --chain voice          # a conditioning setup
-    python morpho_rack.py --no-gui --preset live.json --routing live.json
+    python morpho_rack.py --no-gui --preset live.json    # models, knobs, routing
     python morpho_rack.py --refresh-library      # re-scrape the model list
     python morpho_rack.py --list-models
     python morpho_rack.py --list-devices
@@ -181,9 +181,11 @@ def main() -> None:
                     help="udp port to receive HIVE's OSC on")
     ap.add_argument("--no-osc", action="store_true", help="do not listen for OSC")
     ap.add_argument("--routing", type=Path, default=None,
-                    help="OSC routing table to load at startup")
+                    help="OSC routing table to load at startup; overrides the "
+                         "routing a preset carries")
     ap.add_argument("--preset", type=Path, default=None,
-                    help="rack preset to load at startup")
+                    help="preset to load at startup: models, every knob, the "
+                         "switches, and the OSC routing")
     ap.add_argument("--validate", action="store_true",
                     help="use the SDK's validating loader, which does network checks")
     ap.add_argument("--refresh-library", action="store_true",
@@ -354,7 +356,12 @@ def main() -> None:
 
     if args.preset:
         try:
-            rack.load_preset(args.preset)
+            # A preset carries the routing table too, unless it was written
+            # before that or saved with none. --routing below still wins.
+            saved_osc = rack.load_preset(args.preset)
+            if saved_osc:
+                log.info("osc: %d routes from the preset",
+                         receiver.from_dict(saved_osc))
         except Exception as exc:
             log.error("could not load preset %s: %s", args.preset, exc)
     if args.routing:
