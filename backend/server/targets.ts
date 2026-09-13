@@ -19,7 +19,7 @@ export class Targets {
     if (this.list.length === 0) {
       for (const spec of initial.split(',')) {
         const parsed = parseHostPort(spec.trim());
-        if (parsed) this.list.push({ id: randomUUID(), label: parsed.host === '127.0.0.1' ? 'this Mac' : '', ...parsed, enabled: true, sent: 0, error: null });
+        if (parsed) this.list.push({ id: randomUUID(), label: parsed.host === '127.0.0.1' ? 'this device' : '', ...parsed, enabled: true, sent: 0, error: null });
       }
       this.save();
     }

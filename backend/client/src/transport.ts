@@ -2,7 +2,7 @@
 //  transport.ts
 //  HIVE (client)
 //
-//  Getting frames to the Mac: WebSocket when the phone allows it, POST when
+//  Getting frames to the computer: WebSocket when the phone allows it, POST when
 //  it does not.
 //
 //  With a self-signed certificate iOS Safari loads the page after a warning but

@@ -2,7 +2,7 @@
 //  monitor.ts
 //  HIVE (client, dashboard)
 //
-//  The Mac's view: the QR code people scan, who is in the swarm, where the
+//  The computer's view: the QR code people scan, who is in the swarm, where the
 //  OSC goes, and a test-tone switch that sonifies the swarm right here.
 //
 //  Two sockets. `/monitor-ws` brings a 10 Hz snapshot for the table and the
@@ -176,7 +176,7 @@ function buildProtocolCard(): void {
         '      (examples/hive-receive.pd)',
         'Max:  [udpreceive 9000] → [route /hive/sample] → [unpack i s f f f f f f f f f f f f f f f]',
         "SC:   thisProcess.openUDPPort(9000); OSCdef(\\hive, { |m| m.postln }, '/hive/sample');",
-        'Py:   python3 examples/osc_listen.py 9000        (or JSON: examples/feed_client.py ws://<mac>:8080/feed)',
+        'Py:   python3 examples/osc_listen.py 9000        (or JSON: examples/feed_client.py ws://<computer>:8080/feed)',
       ].join('\n') }),
     ),
   );
@@ -276,7 +276,7 @@ function buildSettingsCards(h: MonitorHello): void {
   ).children);
   refs.wallSettings.replaceChildren(...settingsCard('wall & wi-fi',
     ...boolSetting('wifiHotspot', 'iphone hotspot', 'on: an iPhone personal hotspot (name + password under settings → personal hotspot; switch on "maximise compatibility"; that iPhone itself cannot join). off: any other wi-fi'),
-    ...textSetting('wifiSsid', 'wi-fi name', 'as a QR code here and on the wall; macOS hides the SSID from apps, so type it', "Emil's iPhone"),
+    ...textSetting('wifiSsid', 'wi-fi name', 'as a QR code here and on the wall; some systems hide the SSID from apps, so type it', "Emil's iPhone"),
     ...textSetting('wifiPassword', 'wi-fi password', 'empty = open network'),
     ...boolSetting('wallWifiCode', 'wall: wi-fi code', 'show the wi-fi QR code on the wall — off once everyone is on the network'),
     ...boolSetting('wallJoinCode', 'wall: join code', 'show the join QR code on the wall — off once everyone is in'),
@@ -343,7 +343,7 @@ function drawAddresses(): void {
     .catch((err: Error) => log.fail(`QR: ${err.message}`));
   refs.urls.replaceChildren(
     ...hello.urls.map((u) => el('div', { class: 'url', text: u })),
-    el('p', { class: 'note', text: `Dashboard: http://localhost:${hello.httpPort}/monitor · Raw feed: ws://<this-mac>:${hello.httpPort}/feed` }),
+    el('p', { class: 'note', text: `Dashboard: http://localhost:${hello.httpPort}/monitor · Raw feed: ws://<this-computer>:${hello.httpPort}/feed` }),
   );
 }
 
@@ -375,7 +375,7 @@ function buildPage(): void {
       ...boolSetting('camPush', 'crowd shoves', 'the motion the camera sees under an animal pushes it along the flow'),
       ...numberSetting('camPushStrength', 'shove strength', 'how much of the flow an animal picks up: 0.5 = a draught, 1 = you feel it, 3 = a gale', 0.1),
     ),
-    el('p', { class: 'note', text: 'YOLO11n-pose on this Mac: people, skeletons, clusters. Nobody in the picture is matched to a phone — the camera is a field, the phones are the agents.' }),
+    el('p', { class: 'note', text: 'YOLO11n-pose on this computer: people, skeletons, clusters. Nobody in the picture is matched to a phone — the camera is a field, the phones are the agents.' }),
   );
   refs.wifiCard.replaceChildren(
     el('details', {},
@@ -436,7 +436,7 @@ function buildPage(): void {
         ),
         refs.wallSettings,
         el('div', { class: 'card stack' },
-          el('div', { class: 'section-label', text: 'debug sound on this mac' }),
+          el('div', { class: 'section-label', text: 'debug sound on this computer' }),
           el('div', { class: 'row wrap' }, refs.tonesButton, el('span', { class: 'note', text: 'volume' }), refs.volume),
           el('p', { class: 'note', text: 'One sine per phone. Tilt bends the pitch, turning opens the volume, left/right pans. If you hear it, the whole chain works.' }),
         ),
