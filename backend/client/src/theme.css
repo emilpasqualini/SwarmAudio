@@ -75,7 +75,7 @@
   --serif: 'Young Serif', Georgia, 'Times New Roman', serif;
   --body: 'Bitter', Georgia, serif;
   /* Japanese: neither web font has CJK glyphs, so the system fonts take over
-     (Hiragino on iOS/macOS, Noto Sans CJK on Android) — offline, nothing to
+    (Hiragino on Apple platforms, Noto Sans CJK on Android) — offline, nothing to
      ship. Latin runs still render in Bitter / Young Serif. */
   --serif-ja: 'Young Serif', 'Hiragino Mincho ProN', 'Noto Serif JP', 'Noto Serif CJK JP', 'Yu Mincho', serif;
   --body-ja: 'Bitter', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans CJK JP', 'Yu Gothic', sans-serif;

@@ -26,6 +26,14 @@ cd backend
 ./start.sh --dev           # rebuild the phone app on every save
 ```
 
+On Windows 11, run the equivalent PowerShell launcher:
+
+```powershell
+.\start.ps1
+.\start.ps1 --sim 3
+.\start.ps1 --dev
+```
+
 The terminal prints the phone URL as a QR code, e.g. `https://172.20.10.2:8443`,
 and the dashboard opens at `http://localhost:8080/monitor` — the same QR code
 big enough to scan from across a table.

@@ -27,7 +27,7 @@ export interface MotionSample {
 export function detectPlatform(): Platform {
   const ua = navigator.userAgent;
   if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
-  // iPadOS 13+ pretends to be a Mac; a Mac has no touch points.
+  // iPadOS 13+ presents as a desktop browser; desktop devices have no touch points.
   if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return 'ios';
   if (/Android/.test(ua)) return 'android';
   return 'other';

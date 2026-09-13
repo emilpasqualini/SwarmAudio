@@ -2,7 +2,7 @@
 //  tones.ts
 //  HIVE (client, dashboard)
 //
-//  Debug sound: one sine per phone, right here on the Mac.
+//  Debug sound: one sine per phone, right here on the computer.
 //
 //  Not the installation — that is Pd's job — but the quickest proof that the
 //  whole chain works: if tilting a phone bends a tone, the sensor is read, the
